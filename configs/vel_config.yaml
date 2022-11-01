@@ -1,0 +1,40 @@
+# algorithm config
+lr: 5e-4
+mini_batch_size: 64
+meta_batch_size: 10
+num_train_tasks: 100
+num_test_tasks: 30
+n_epochs: 500
+k_epochs: 5 # optimization epoch
+num_stop_conditions: 5
+stop_goal: 180
+gamma: 0.99
+gae_lambda: 0.95
+lr_clip_range: 0.2
+ent_coef: 1e-3
+vf_coef: 0.2
+max_grad_norm: 5
+normalize_inputs: True
+normalize_outputs: True
+normalize_advantages: True
+min_std: 0.5 # e^-20
+max_std: 1.5 # e^2
+
+# network config
+is_shared_network: False
+linear_dim: 128
+trans_dim: 256
+hidden_dim: 128 
+is_recurrent: True
+num_rnn_layers: 2
+seq_len: 1
+is_dterministic: False
+layer_normalization: False
+# activation: 'tanh'
+
+# n_epochs: 4000
+# entropy_method: 'max'
+# pg_loss: 'surrogate_clip'
+# max_epochs: 256
+# init_std: 1
+# use_trust_region: False
