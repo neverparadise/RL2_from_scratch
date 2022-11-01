@@ -70,8 +70,10 @@ class AntDirEnv(AntEnv):
     """
     Forward/backward ant direction environment
     """
-
-    def __init__(self, max_episode_steps=200):
+    def __init__(self, num_tasks=2, max_episode_steps=200):
+        directions = [-1.0, 1.0, -1.0, 1.0]
+        self.tasks = [{"direction": direction} for direction in directions]
+        assert num_tasks == len(self.tasks)
         self.set_task(self.sample_tasks(1)[0])
         self._max_episode_steps = max_episode_steps
         self.task_dim = 1
@@ -96,14 +98,17 @@ class AntDirEnv(AntEnv):
         notdone = np.isfinite(state).all() and state[2] >= 0.2 and state[2] <= 1.0
         done = not notdone
         ob = self._get_obs()
-        return ob, reward, done, dict(
+        info = dict(
             reward_forward=forward_reward,
             reward_ctrl=-ctrl_cost,
             reward_contact=-contact_cost,
             reward_survive=survive_reward,
             torso_velocity=torso_velocity,
-            task=self.get_task()
-        )
+            task=self.get_task())
+        return ob, reward, done, info
+
+    def get_all_task_idx(self) -> List[int]:
+        return list(range(len(self.tasks)))
 
     def sample_tasks(self, n_tasks):
         # for fwd/bwd env, goal direc is backwards if - 1.0, forwards if + 1.0
@@ -119,6 +124,8 @@ class AntDirEnv(AntEnv):
 
 
 class AntDir2DEnv(AntDirEnv):
+    def __init__(num_tasks=2, max_episode_steps=200):
+        super().__init__()
     def sample_tasks(self, n_tasks):
         # for fwd/bwd env, goal direc is backwards if - 1.0, forwards if + 1.0
         directions = np.array([random.gauss(mu=0, sigma=1) for _ in range(n_tasks * 2)]).reshape((n_tasks, 2))

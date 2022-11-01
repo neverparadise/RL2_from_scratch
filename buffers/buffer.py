@@ -7,7 +7,13 @@ from torch.nn.utils.rnn import pad_sequence
 from typing import Any, Generator, Optional, Tuple, Callable, Dict, List, NamedTuple, Union
 from collections import namedtuple
 
-def to_tensor(np_array, device="cpu"):
+
+def shuffle(x: torch.Tensor, device):
+    indices = torch.randperm(x.size(0)).to(device)
+    x_ = torch.index_select(x, dim=0, index=indices)
+    return x_
+
+def to_tensor(np_array, device):
     if isinstance(np_array, np.ndarray):
         return torch.from_numpy(np_array).float().to(device)
     return np_array.float().to(device)
@@ -37,7 +43,7 @@ class RecurrentRolloutBufferSamples:
     actions: th.Tensor
     rewards: th.Tensor
     dones:  th.Tensor
-    old_values: th.Tensor
+    oldvalues: th.Tensor
     returns: th.Tensor
     old_log_probs: th.Tensor
     advantages: th.Tensor
@@ -45,7 +51,7 @@ class RecurrentRolloutBufferSamples:
     v_hiddens: th.Tensor
     
     def get_transition(self):
-        return self.observations, self.actions, self.rewards, self.dones, self.old_values, self.returns, \
+        return self.observations, self.actions, self.rewards, self.dones, self.oldvalues, self.returns, \
             self.old_log_probs, self.advantages,  self.pi_hiddens, self.v_hiddens
 
             
@@ -57,15 +63,16 @@ class RolloutBuffer:
         ):
         
         self.device = args.device
-        self.buffer_size = args.batch_size
+        if args.meta_learning:
+            self.buffer_size = args.batch_size
+        else:
+            self.buffer_size = args.rollout_steps
         self.state_dim = configs["state_dim"]
         self.action_dim = configs["action_dim"]
         self.is_continuous = configs["is_continuous"]
         self.gamma = configs["gamma"]
         self.gae_lambda = configs["gae_lambda"]
         self.is_recurrent = configs["is_recurrent"]
-        self.is_shared_network = configs["is_shared_network"]
-        
         if self.is_recurrent:
             self.hidden_dim = configs["hidden_dim"]
             self.num_rnn_layers = configs["num_rnn_layers"]
@@ -86,12 +93,8 @@ class RolloutBuffer:
         self.returns = np.zeros((self.buffer_size,), dtype=np.float32)
         self.real_size = 0
         if self.is_recurrent:
-            if self.is_shared_network:
-                self.hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
-            else:
-                # 하나의 시퀀스에 대한 hidden state를 저장한다?
-                self.pi_hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
-                self.v_hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
+            self.pi_hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
+            self.v_hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
             
         # List for tracking the trajectory indices because we don't know
         # how many we can collect
@@ -101,7 +104,7 @@ class RolloutBuffer:
     @property
     def size(self):
         return self.real_size
-        
+    
     def add_sample(self, sample: Tuple[Any]) -> bool:
         """
             Adds a sample to the buffer and increments pointer.
@@ -115,10 +118,7 @@ class RolloutBuffer:
             if not self.is_recurrent:
                 observation, action, value, reward, log_prob, done = sample
             else:
-                if self.is_shared_network:
-                    observation, action, reward, done, hidden, value, log_prob  = sample
-                else:
-                    observation, action, reward, done, pi_hidden, v_hidden, value, log_prob, = sample
+                observation, action, reward, done, pi_hidden, v_hidden, value, log_prob, = sample
             
             # 1. Observation
             self.observations[self.pt] = observation
@@ -138,11 +138,8 @@ class RolloutBuffer:
             if self.is_recurrent:
                 # hidden_shape = (num_rnn_layers, batch_size, hidden_size)
                 # we need to squeeze batch dim
-                if self.is_shared_network:
-                    self.hiddens[self.pt] = hidden
-                else:
-                    self.pi_hiddens[self.pt] = pi_hidden
-                    self.v_hiddens[self.pt] = v_hidden
+                self.pi_hiddens[self.pt] = pi_hidden
+                self.v_hiddens[self.pt] = v_hidden
             self.pt += 1
         self.real_size = min(self.buffer_size, self.real_size + 1)
         return self.pt == self.buffer_size
@@ -150,34 +147,19 @@ class RolloutBuffer:
     def add_trajs(self, trajs: List[Dict[str, np.ndarray]]) -> None:
         # 버퍼에 경로들 추가
         for traj in trajs:
-
-            if self.is_shared_network:
-                for (obs, action, reward, done, hidden, value, log_prob) in zip(
-                    traj["observations"],
-                    traj["actions"],
-                    traj["rewards"],
-                    traj["dones"],
-                    traj["hiddens"],
-                    traj["values"],
-                    traj["log_probs"],
-                ):
-                    sample = (obs, action, reward, done, hidden, value, log_prob)
-                    self.add_sample(sample)
-                self.end_trajectory(traj["values"][-1], traj["dones"][-1])
-            else:                
-                for (obs, action, reward, done, pi_hidden, v_hidden, value, log_prob) in zip(
-                    traj["observations"],
-                    traj["actions"],
-                    traj["rewards"],
-                    traj["dones"],
-                    traj["pi_hiddens"],
-                    traj["v_hiddens"],
-                    traj["values"],
-                    traj["log_probs"],
-                ):
-                    sample = (obs, action, reward, done, pi_hidden, v_hidden, value, log_prob)
-                    self.add_sample(sample)
-                self.end_trajectory(traj["values"][-1], traj["dones"][-1])
+            for (obs, action, reward, done, pi_hidden, v_hidden, value, log_prob) in zip(
+                traj["observations"],
+                traj["actions"],
+                traj["rewards"],
+                traj["dones"],
+                traj["pi_hiddens"],
+                traj["v_hiddens"],
+                traj["values"],
+                traj["log_probs"],
+            ):
+                sample = (obs, action, reward, done, pi_hidden, v_hidden, value, log_prob)
+                self.add_sample(sample)
+            #self.end_trajectory(traj["values"][-1], traj["dones"][-1])
                 
 
     def end_trajectory(self, last_value: np.ndarray, last_done: int):
@@ -208,77 +190,46 @@ class RolloutBuffer:
         self.advantages[traj_range] = (self.advantages[traj_range] - self.advantages[traj_range].mean()) / self.advantages[traj_range].std()
         # https://github.com/DLR-RM/stable-baselines3/blob/6f822b9ed7d6e8f57e5a58059923a5b24e8db283/stable_baselines3/common/buffers.py#L347-L348
         self.returns[traj_range] = self.advantages[traj_range] + self.values[traj_range]
-                    
-    def get_samples(self, indices: np.ndarray) -> RolloutBufferSamples:
-        """
-            Returns samples as RolloutBufferSamples for training.
-            
-            :param indices: Indices for indexing data.
-        """
-        assert self.pt == self._max_size
+
+    def compute_gae(self) -> None:
+        prev_value = 0
+        running_return = 0
+        running_advant = 0
+
+        for t in reversed(range(len(self.rewards))):
+            running_return = self.rewards[t] + self.gamma * (1 - self.dones[t]) * running_return
+            self.returns[t] = running_return
+            running_tderror = (
+                self.rewards[t] + self.gamma * (1 - self.dones[t]) * prev_value - self.values[t]
+            )
+            running_advant = (
+                running_tderror + self.gamma * self.gae_lambda * (1 - self.dones[t]) * running_advant
+            )
+            self.advantages[t] = running_advant
+            prev_value = self.values[t]
+        self.advantages = (self.advantages - self.advantages.mean()) / self.advantages.std()
+        
+    def sample_batch(self) -> RecurrentRolloutBufferSamples:
+        assert self.pt == self.buffer_size
         self.pt = 0
-        samples = (
-            self.observations[indices],
-            self.actions[indices],
-            self.values[indices],
-            self.returns[indices],
-            self.log_probs[indices],
-            self.advantages[indices]
-        )
-
-        return RolloutBufferSamples(*tuple([to_tensor(sample, device=self.device) for sample in samples]))
-
-    def get_samples_recurrent(self, indices: np.ndarray) -> RecurrentRolloutBufferSamples:
-        """
-            Returns samples as RolloutBufferSamples for training.
-            
-            :param indices: Indices for indexing data.
-        """
-        samples = [
-            self.observations[indices],
-            self.actions[indices],
-            self.values[indices],
-            self.returns[indices],
-            self.log_probs[indices],
-            self.advantages[indices],
-            np.ones(len(indices)),
-         ]
-        if self.is_shared_network:
-            samples.extend([self.hiddens[indices]])
-        else:
-            samples.extend([self.pi_hiddens[indices], self.v_hiddens[indices]])
-        sample_list = [to_tensor(sample, device=self.device) for sample in samples]
-        return RecurrentRolloutBufferSamples(*tuple(sample_list))
-    
-    def sample_batch(self):
+        self.compute_gae()
         samples = dict(
             observations=self.observations,
             actions=self.actions,
             rewards=self.rewards,
             dones=self.dones,
             returns=self.returns,
-            old_values=self.values,
-            log_probs=self.log_probs,
-            advants=self.advantages,
+            oldvalues=self.values,
+            old_log_probs=self.log_probs,
+            advantages=self.advantages,
         )
-        if self.is_shared_network:
-            samples.update({"hiddens":self.hiddens})
-        else:
-            samples.update({"pi_hiddens":self.pi_hiddens,
-                            "v_hiddens": self.v_hiddens
-                            })
-        samples = {k: to_tensor(v, device=self.device) for k, v in samples.items()}
+        samples.update({"pi_hiddens":self.pi_hiddens,
+                        "v_hiddens": self.v_hiddens
+                        })
+        samples = {k: shuffle(to_tensor(v, device=self.device), self.device) for k, v in samples.items()}
         return RecurrentRolloutBufferSamples(*tuple(samples.values()))
     
     def sample_mini_batch(self, batch_size):
         indices = np.random.choice(self.pt, batch_size, replace=False)
         return self.get_samples_recurrent(indices)
 
-    def sample_transitions_no_rnn(self, batch_size):
-        indices = np.random.permutation(self.buffer_size)
-        start_idx = 0
-        while start_idx < self.buffer_size:
-            yield self._get_samples(indices[start_idx:start_idx + batch_size])
-            start_idx += batch_size
-    
-    

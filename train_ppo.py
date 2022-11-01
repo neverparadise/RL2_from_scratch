@@ -17,11 +17,11 @@ import torch
 import torch.optim as optim
 from ppo import PPO
 from networks import RNNActor, RNNCritic
-from buffers.replay_buffer import RolloutBuffer
-from meta_learner import MetaLearner
+from buffers.buffer import RolloutBuffer
 from torch.utils.tensorboard import SummaryWriter
 from utils.tb_logger import TBLogger
-from utils.sampler import Sampler
+from utils.sampler import BaseSampler, RL2Sampler
+
 import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -33,9 +33,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # ? Experiments information
-    parser.add_argument('--exp_name', type=str, default="RL2",
+    parser.add_argument('--exp_name', type=str, default="PPO",
                         help="the name of this experiment")
-    parser.add_argument("--meta_learning", type=bool, default=True)
+    parser.add_argument("--meta_learning", type=bool, default=False)
     parser.add_argument("--load", type=bool, default=False)
     parser.add_argument("--load_ckpt_num", type=int, default=0)
     parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)),
@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
-    parser.add_argument("--render", type=bool, default=False)
+    parser.add_argument("--render", type=bool, default=True)
     parser.add_argument("--render_mode", type=str, default="human")
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
@@ -59,14 +59,11 @@ def parse_args():
 #             help="the id of the environment")
 #     parser.add_argument("--env_name", type=str, default="LunarLanderContinuous-v2",
 #             help="the id of the environment")
-#     parser.add_argument("--env_name", type=str, default="SparsePointEnv")
-    #parser.add_argument("--env_name", type=str, default="HalfCheetah-v2")
-    parser.add_argument("--env_name", type=str, default="HalfCheetahVelEnv")
-
-
+    parser.add_argument("--env_name", type=str, default="HalfCheetah-v2")
+    # parser.add_argument("--env_name", type=str, default="Ant")
     parser.add_argument("--total-timesteps", type=int, default=1000000,
                         help="total timesteps of the experiments")
-    parser.add_argument('--rollout_steps', default=512)
+    parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=500)
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")
@@ -78,14 +75,9 @@ def parse_args():
     parser.add_argument('--config_path', type=str,
                         default='./configs/dir_config.yaml')
     args = parser.parse_args()
+    args.batch_size = int(args.num_envs * args.rollout_steps)
+
     return args
-
-
-def make_env_tasks(args):
-    env = gym.make(args.env_name, num_tasks=args.num_tasks)
-    tasks: List[int] = env.get_all_task_idx()
-    return env, tasks
-
 
 def make_env(args):
     env = gym.make(args.env_name)
@@ -116,16 +108,10 @@ if __name__ == "__main__":
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
-    args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
-
     tb_logger = TBLogger(args, configs)
 
     # env, seed
-    if args.meta_learning:
-        env, tasks = make_env_tasks(args)
-    else:
-        env = make_env(args)
-
+    env = make_env(args)
     env.seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -142,22 +128,11 @@ if __name__ == "__main__":
     buffer = RolloutBuffer(args, configs)
 
     # execution
-    # sampler = Sampler(env, agent, args, configs)
-    # trajs = sampler.obtain_samples()
-    # buffer.add_trajs(trajs)
-    args.render = False
+    sampler = BaseSampler(env, agent, args, configs)
+    for i in range(10):
+        trajs = sampler.obtain_samples()
+        buffer.add_trajs(trajs)
 
     # train
-    print("Meta training start...")
-    meta_learner = MetaLearner(
-                    env=env,
-                    agent=agent,
-                    tb_logger=tb_logger, 
-                    train_tasks=list(tasks[: configs["num_train_tasks"]]),
-                    test_tasks=list(tasks[-configs["num_test_tasks"] :]),
-                    args=args, configs=configs
-                    )
 
-    # RL^2 학습 시작
-    meta_learner.meta_train()
 

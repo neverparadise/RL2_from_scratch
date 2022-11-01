@@ -1,7 +1,7 @@
 import gym
 
 from envs.half_cheetah import HalfCheetahDirEnv, HalfCheetahVelEnv
-from envs.ant import AntDirEnv, AntDir2DEnv, AntGoalEnv
+from envs.ant import AntEnv, AntDirEnv, AntDir2DEnv, AntGoalEnv
 from envs.point_env import SparsePointEnv, PointEnv
 
 __all__ = [
@@ -21,6 +21,11 @@ gym.envs.register(
 gym.envs.register(
      id='HalfCheetahVelEnv',
      entry_point='envs.half_cheetah:HalfCheetahVelEnv',
+     max_episode_steps=200,
+)
+gym.envs.register(
+     id='AntEnv',
+     entry_point='envs.ant:AntEnv',
      max_episode_steps=200,
 )
 gym.envs.register(

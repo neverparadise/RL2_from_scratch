@@ -1,10 +1,6 @@
 # algorithm config
 lr: 5e-4
 mini_batch_size: 64
-meta_batch_size: 4
-num_tasks: 4
-num_train_tasks: 2
-num_test_tasks: 2
 n_epochs: 500
 k_epochs: 5 # optimization epoch
 num_stop_conditions: 5
@@ -23,7 +19,6 @@ max_std: 1.5 # e^2
 
 # network config
 linear_dim: 128
-trans_dim: 256
 hidden_dim: 128 
 is_recurrent: True
 num_rnn_layers: 2

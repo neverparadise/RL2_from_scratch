@@ -21,7 +21,8 @@ from buffers.buffer import RolloutBuffer
 from meta_learner import MetaLearner
 from torch.utils.tensorboard import SummaryWriter
 from utils.tb_logger import TBLogger
-from utils.sampler import Sampler
+from utils.sampler import BaseSampler, RL2Sampler
+
 import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -33,9 +34,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # ? Experiments information
-    parser.add_argument('--exp_name', type=str, default="RL2_Evaluation",
+    parser.add_argument('--exp_name', type=str, default="RL2",
                         help="the name of this experiment")
     parser.add_argument("--meta_learning", type=bool, default=True)
+    parser.add_argument("--load", type=bool, default=False)
+    parser.add_argument("--load_ckpt_num", type=int, default=0)
     parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)),
                         default=True, nargs="?", const=True,
                         help="if toggled, `torch.backends.cudnn.deterministic=False`")
@@ -48,13 +51,17 @@ def parse_args():
     parser.add_argument("--render_mode", type=str, default="human")
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
-    parser.add_argument("--load", type=bool, default=True)
-    parser.add_argument("--load_ckpt_num", type=int, default=100)
+    parser.add_argument("--save_periods", type=int, default=20)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
 
     #  Environments information
-    parser.add_argument("--env_name", type=str, default="HalfCheetahDirEnv")
+    #  parser.add_argument("--env_name", type=str, default="SparsePointEnv")
+    parser.add_argument("--env_name", type=str, default="AntDirEnv")
+    # parser.add_argument("--env_name", type=str, default="AntDir2DEnv")
+    # parser.add_argument("--env_name", type=str, default="AntGoalEnv")
+
+
     parser.add_argument("--total-timesteps", type=int, default=1000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=512)
@@ -62,6 +69,8 @@ def parse_args():
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")
     parser.add_argument("--num-tasks", type=int, default=4)  # meta batch size
+    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+                        help="Toggle learning rate annealing for policy and value networks")
 
     # Hyperparameter config
     parser.add_argument('--config_path', type=str,
@@ -70,8 +79,8 @@ def parse_args():
     return args
 
 
-def make_env_tasks(args):
-    env = gym.make(args.env_name, num_tasks=args.num_tasks)
+def make_env_tasks(args, configs):
+    env = gym.make(args.env_name, num_tasks=configs["num_tasks"])
     tasks: List[int] = env.get_all_task_idx()
     return env, tasks
 
@@ -100,12 +109,13 @@ def add_state_action_info(env, configs):
     return configs
 
 
-# argparser, configs, logger
 if __name__ == "__main__":
+    # argparser, configs, logger
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
     args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
+
     tb_logger = TBLogger(args, configs)
 
     # env, seed
@@ -126,15 +136,25 @@ if __name__ == "__main__":
     # agent
     agent = PPO(args, configs)
 
-    ckpt_path = f"{args.weight_path}" + '/' +f"{args.env_name}_RL2_{args.seed}" + f"/checkpoint_" + f"{str(args.load_ckpt_num)}.pt"
-    print(ckpt_path)
-    agent.load(ckpt_path)
     # buffer, sampler
     buffer = RolloutBuffer(args, configs)
 
+    # execution
     sampler = Sampler(env, agent, args, configs)
-    for i in range(3):
-        test_return = 0.0
+    for i in range(10):
         trajs = sampler.obtain_samples()
-        test_return += np.array([np.sum(trajs[i]["rewards"]) for i in range(len(trajs))]).mean().item()
-        print(f"test return: {test_return}")
+        buffer.add_trajs(trajs)
+
+    # train
+    print("Meta training start...")
+    meta_learner = MetaLearner(
+                    env=env,
+                    agent=agent,
+                    tb_logger=tb_logger, 
+                    train_tasks=list(tasks[: configs["num_train_tasks"]]),
+                    test_tasks=list(tasks[-configs["num_test_tasks"] :]),
+                    args=args, configs=configs
+                    )
+
+    # meta_learner.meta_train()
+

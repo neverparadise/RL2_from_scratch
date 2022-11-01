@@ -29,11 +29,11 @@ def _format(x, device, minibatch_size=1, is_training=False):
     return x
 
 
-class RL2Actor(nn.Module):
+class RNNActor(nn.Module):
     def __init__(self, args, configs) -> None:
         super().__init__()
         self.device = torch.device(args.device)
-        self.input_dim = configs["state_dim"] + configs["action_dim"] + 2 # 2: reward, done dimension
+        self.input_dim = configs["state_dim"]
         self.minibatch_size = configs["mini_batch_size"]
         self.is_continuous = configs["is_continuous"]
         self.hidden_dim = configs["hidden_dim"]
@@ -44,9 +44,8 @@ class RL2Actor(nn.Module):
         self.embedding = nn.Sequential(
             layer_init(nn.Linear(self.input_dim, configs["linear_dim"])),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(configs["linear_dim"], configs["linear_dim"])),
-            nn.LeakyReLU(),
             layer_init(nn.Linear(configs["linear_dim"], configs["trans_dim"])),
+            nn.LeakyReLU(),
         )
         self.gru = nn.GRU(configs["trans_dim"], configs["hidden_dim"], \
                             num_layers=self.num_rnn_layers, bias=True)
@@ -58,16 +57,11 @@ class RL2Actor(nn.Module):
         else:
             self.policy_logits = layer_init(nn.Linear(configs["hidden_dim"], self.num_discretes))
 
-    def forward(self, transition, hidden=None, is_training=False):
-        state, action, reward, done = transition
+    def forward(self, state, hidden=None, is_training=False):
         state = _format(state, self.device, self.minibatch_size, is_training)
-        action = _format(action, self.device, self.minibatch_size, is_training)
-        reward = _format(reward, self.device, self.minibatch_size, is_training)
-        done = _format(done, self.device, self.minibatch_size, is_training)
-        concatenated = torch.cat([state, action, reward, done], dim=-1)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous()
-        x = self.embedding(concatenated)
+        x = self.embedding(state)
         hidden = to_tensor(hidden, device=self.device)
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
@@ -82,13 +76,13 @@ class RL2Actor(nn.Module):
         return dist, new_hidden
 
 
-class RL2Critic(nn.Module):
+class RNNCritic(nn.Module):
     def __init__(self, args, configs) -> None:
         super().__init__()
         # information        
         self.device = torch.device(args.device)
         self.minibatch_size = configs["mini_batch_size"]
-        self.input_dim = configs["state_dim"] + configs["action_dim"] + 2 # 2: reward, done dimension
+        self.input_dim = configs["state_dim"]
         self.is_continuous = configs["is_continuous"]
         self.hidden_dim = configs["hidden_dim"]
         self.num_rnn_layers = configs["num_rnn_layers"]
@@ -98,21 +92,19 @@ class RL2Critic(nn.Module):
         self.embedding = nn.Sequential(
             layer_init(nn.Linear(self.input_dim, configs["linear_dim"])),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(configs["linear_dim"], configs["trans_dim"])),
+            layer_init(nn.Linear(configs["linear_dim"], configs["linear_dim"])),
             nn.LeakyReLU(),
+            layer_init(nn.Linear(configs["linear_dim"], configs["trans_dim"])),
         )
         self.gru = nn.GRU(configs["trans_dim"], configs["hidden_dim"], \
                             num_layers=self.num_rnn_layers, bias=True)
         self.v = nn.Linear(configs["hidden_dim"], 1)   
              
-    def forward(self, transition, hidden=None, is_training=False):
-        state, action, reward, done = transition
+    def forward(self, state, hidden=None, is_training=False):
         state = _format(state, self.device, self.minibatch_size, is_training)
-        action = _format(action, self.device, self.minibatch_size, is_training)
-        reward = _format(reward, self.device, self.minibatch_size, is_training)
-        done = _format(done, self.device, self.minibatch_size, is_training)
-        concatenated = torch.cat([state, action, reward, done], dim=-1)
-        x = self.embedding(concatenated)
+        if is_training:
+            hidden = hidden.permute(1, 0, 2).contiguous()
+        x = self.embedding(state)
         hidden = to_tensor(hidden, device=self.device)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous()
