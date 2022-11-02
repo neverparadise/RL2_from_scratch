@@ -21,7 +21,7 @@ from buffers.buffer import RolloutBuffer
 from meta_learner import MetaLearner
 from torch.utils.tensorboard import SummaryWriter
 from utils.tb_logger import TBLogger
-from utils.sampler import Sampler
+from utils.sampler import RL2Sampler
 import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
     parser.add_argument("--load", type=bool, default=True)
-    parser.add_argument("--load_ckpt_num", type=int, default=100)
+    parser.add_argument("--load_ckpt_num", type=int, default=160)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
 
@@ -65,7 +65,7 @@ def parse_args():
 
     # Hyperparameter config
     parser.add_argument('--config_path', type=str,
-                        default='./configs/dir_config.yaml')
+                        default='./configs/cheetah_dir_config.yaml')
     args = parser.parse_args()
     return args
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     # buffer, sampler
     buffer = RolloutBuffer(args, configs)
 
-    sampler = Sampler(env, agent, args, configs)
+    sampler = RL2Sampler(env, agent, args, configs)
     for i in range(3):
         test_return = 0.0
         trajs = sampler.obtain_samples()

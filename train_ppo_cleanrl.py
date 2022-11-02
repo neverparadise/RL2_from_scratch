@@ -78,7 +78,7 @@ def parse_args():
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=500)
-    parser.add_argument("--num-envs", type=int, default=1,
+    parser.add_argument("--num-envs", type=int, default=4,
                         help="the number of parallel game environments")
     parser.add_argument("--num-tasks", type=int, default=4)  # meta batch size
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,

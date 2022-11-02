@@ -73,7 +73,12 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
         self._goal_dir = self._task["direction"]
         self.reset()
 
+    def set_task(self, task):
+        self._goal_dir = task
 
+    def get_task(self):
+        return np.array(self._goal_dir)
+    
 class HalfCheetahVelEnv(HalfCheetahEnv):
     def __init__(self, num_tasks: int) -> None:
         self.tasks = self.sample_tasks(num_tasks)

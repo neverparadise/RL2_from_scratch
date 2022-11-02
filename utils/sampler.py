@@ -96,10 +96,13 @@ class BaseSampler:
             cur_step += 1
             self.cur_samples += 1
             if self.render and (self.render_mode is not None):
+               print(1)
+               print(f"env: {self.env_name}, is_render: {self.render}")
                self.env.render(mode=self.render_mode)
             elif not self.render and (self.render_mode is None):
                pass
             elif self.render and (self.render_mode is None):
+               print(2)
                self.env.render()
 
 
@@ -124,7 +127,7 @@ class RL2Sampler(BaseSampler):
         configs
     ) -> None:
         super().__init__(env, agent, args, configs)
-        self.num_tasks = args.num_tasks
+        self.num_tasks = configs["num_tasks"]
 
     def obtain_samples(self) -> List[Dict[str, np.ndarray]]:
         self.pi_hidden = np.zeros((self.num_rnn_layers, 1, self.hidden_dim))

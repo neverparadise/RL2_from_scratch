@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from distutils.util import strtobool
 import argparse
 import yaml
+import datetime
 # import ray
 
 import gym
@@ -49,7 +50,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
     parser.add_argument("--render", type=bool, default=False)
-    parser.add_argument("--render_mode", type=str, default="human")
+    parser.add_argument("--render_mode", type=str, default=None)
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=20)
@@ -115,6 +116,7 @@ if __name__ == "__main__":
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
     args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
+    args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
 
     tb_logger = TBLogger(args, configs)
 

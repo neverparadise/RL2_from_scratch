@@ -93,6 +93,7 @@ class PointEnv(Env):
         self.window = pygame.display.set_mode((self.width,self.height), 0, 32)
         pygame.display.set_caption('PointEnv')
         self.tasks = self.sample_tasks(num_tasks)
+        print(self.tasks)
         self._task = self.tasks[0]
         self._goal = self._task["goal"]
         self.task_dim = 2
@@ -103,7 +104,7 @@ class PointEnv(Env):
 
     def reset_task(self, idx: int) -> None:
         self._task = self.tasks[idx]
-        self.goal_pos = self._task
+        self._goal = self._task["goal"]
         self.reset()
 
     def set_task(self, task):

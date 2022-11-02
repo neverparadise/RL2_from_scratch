@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument("--save_periods", type=int, default=20)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
-    parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, this experiment will be tracked with Weights and Biases")
     parser.add_argument("--wandb-project-name", type=str, default="cleanRL",
         help="the wandb's project name")
@@ -70,17 +70,16 @@ def parse_args():
     parser.add_argument("--is_atari", type=bool, default=False)
     # parser.add_argument("--env_name", type=str, default="CartPole-v0",
             # help="the id of the environment")
-    # parser.add_argument("--env_name", type=str, default="LunarLanderContinuous-v2",
-            # help="the id of the environment")
+    #parser.add_argument("--env_name", type=str, default="LunarLanderContinuous-v2",
+    #       help="the id of the environment")
     parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
     # parser.add_argument("--env_name", type=str, default="Ant")
     parser.add_argument("--total-timesteps", type=int, default=1000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=500)
-    parser.add_argument("--num-envs", type=int, default=1,
+    parser.add_argument("--num-envs", type=int, default=4,
                         help="the number of parallel game environments")
-    parser.add_argument("--num-tasks", type=int, default=4)  # meta batch size
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="Toggle learning rate annealing for policy and value networks")
 
@@ -89,6 +88,7 @@ def parse_args():
                         default='./configs/base_config.yaml')
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.rollout_steps)
+    args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
     return args
 
 
@@ -157,18 +157,20 @@ def to_tensor(np_array, device="cpu"):
     return np_array.float().to(device)
 
 
-def _format(x, device, minibatch_size=1, is_training=False):
+def _format(x, device, num_envs=4, minibatch_size=1, is_training=False):
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x, dtype=torch.float32)
         x = x.to(device=device)
     else:
         x = x.to(device=device)
-    if len(x.shape) < 2:
-        x = x.reshape(1, -1) # [L, N, flatten]
+    if len(x.shape) < 3:
+        x = x.reshape(1, num_envs, -1) # [L, N, flatten]
     if is_training:
-        x = x.reshape(minibatch_size, -1)
+        x = x.reshape(1, minibatch_size, -1)
     return x
 
+# hidden = (seq_len, batch_size, hidden_size)
+# hidden = (1, num_envs*mb_size, hidden)
 
 
 class Agent(nn.Module):
@@ -206,11 +208,11 @@ class Agent(nn.Module):
 class RNNAgent(nn.Module):
     def __init__(self, args, configs) -> None:
         super().__init__()
+        self.num_envs = args.num_envs
         self.device = torch.device(args.device)
         self.input_dim = configs["state_dim"]
         self.linear_dim = configs["linear_dim"]
-        self.trans_dim = configs["trans_dim"]
-        self.minibatch_size = configs["mini_batch_size"]
+        self.minibatch_size = configs["minibatch_size"]
         self.is_continuous = configs["is_continuous"]
         self.is_deterministic = configs["is_dterministic"]
         self.hidden_dim = configs["hidden_dim"]
@@ -238,7 +240,8 @@ class RNNAgent(nn.Module):
         )
 
     def forward(self, state, hidden=None, is_training=False):
-        state = _format(state, self.device, self.minibatch_size, is_training)
+        # state = (num_envs, state_dim)
+        state = _format(state, self.device, self.num_envs, self.minibatch_size, is_training)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous()
         x = self.embedding(state)
@@ -255,11 +258,15 @@ class RNNAgent(nn.Module):
             dist = Categorical(prob)
         return x, dist, new_hidden
 
-    def get_action_and_value(self, x ,hidden, is_training, action=None):
+    def get_value(self, x, hidden, is_training=False):
+        x, dist, new_hidden = self.forward(x, hidden, is_training=is_training)
+        return self.critic(x)
+    
+    def get_action_and_value(self, x ,hidden, is_training=False, action=None):
         x, dist, new_hidden = self.forward(x, hidden, is_training=is_training)
         value = self.critic(x)
         if is_training:
-            return action, dist.log_prob(action), dist.entropy().sum(1), value, new_hidden
+            return action, dist.log_prob(action).sum(-1), dist.entropy().sum(-1), value, new_hidden
         else: # evaluation
             if self.is_deterministic:
                 action = dist.mean
@@ -268,18 +275,19 @@ class RNNAgent(nn.Module):
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
                 log_prob = log_prob.sum(-1)
-            while len(action.shape) != 1:
-                action = action.squeeze(0)
-                log_prob = log_prob.squeeze(0)
-            if self.is_continuous:
-                action = action.detach().to('cpu').numpy()
-            else:
-                action = action.detach().to('cpu').numpy().item()
             
-            log_prob = log_prob.detach().to('cpu').numpy()
-            entropy = dist.entropy().sum(1).detach().to('cpu').numpy()
-            value = value.detach().to('cpu').numpy()
-            return action, log_prob, entropy, value, new_hidden.detach().cpu().numpy()
+            action = action.reshape(self.num_envs, -1)
+            log_prob = log_prob.reshape(self.num_envs,)
+            if self.is_continuous:
+                action = action.detach()
+            else:
+                # ! 벡터환경이라 item 없애야할듯
+                action = action.detach() # .item() ? 
+            
+            log_prob = log_prob.detach()
+            entropy = dist.entropy().sum(-1)
+            value = value.detach()
+            return action, log_prob, entropy, value, new_hidden
                                 
 
 if __name__ == "__main__":
@@ -310,7 +318,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
     device = torch.device(
-        "cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+        args.device if torch.cuda.is_available() and args.cuda else "cpu")
     configs = add_state_action_info(env, configs)
 
     # agent
@@ -329,7 +337,7 @@ if __name__ == "__main__":
     envs = gym.vector.SyncVectorEnv(
         [make_env(args, configs, args.seed + i, i, run_name) for i in range(args.num_envs)]
     )
-    agent = Agent(envs).to(device)
+    agent = RNNAgent(args, configs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=float(configs["lr"]), eps=1e-5)
 
     # ALGO Logic: Storage setup
@@ -339,6 +347,7 @@ if __name__ == "__main__":
     rewards = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
     values = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
+    hiddens = torch.zeros((args.rollout_steps, configs["num_rnn_layers"], args.num_envs, configs["hidden_dim"])).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -348,6 +357,7 @@ if __name__ == "__main__":
     num_updates = args.total_timesteps // args.batch_size
 
     for update in range(1, num_updates + 1):
+        hidden = hiddens[0].clone().to(device) # 2, 4, 18
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
@@ -358,14 +368,14 @@ if __name__ == "__main__":
             global_step += 1 * args.num_envs
             obs[step] = next_obs
             dones[step] = next_done
+            hiddens[step] = hidden
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                action, logprob, entropy, value, hidden = agent.get_action_and_value(next_obs, hidden)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
             rewards[step] = torch.tensor(reward).to(device).view(-1)
@@ -380,7 +390,7 @@ if __name__ == "__main__":
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
+            next_value = agent.get_value(next_obs, hidden).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
             for t in reversed(range(args.rollout_steps)):
@@ -401,6 +411,7 @@ if __name__ == "__main__":
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
+        b_hiddens = hiddens.reshape((-1, configs["num_rnn_layers"], configs["hidden_dim"])).contiguous()
 
         # Optimizing the policy and value network
         b_inds = np.arange(args.batch_size)
@@ -410,9 +421,11 @@ if __name__ == "__main__":
             for start in range(0, args.batch_size, configs["minibatch_size"]):
                 end = start + configs["minibatch_size"]
                 mb_inds = b_inds[start:end]
-
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
-                logratio = newlogprob - b_logprobs[mb_inds]
+                mb_hiddens = b_hiddens[mb_inds]
+                _, newlogprob, entropy, newvalue, newhiddens = agent.get_action_and_value(b_obs[mb_inds], hidden=mb_hiddens,\
+                                                                    is_training=True, action=b_actions[mb_inds])
+                mb_old_probs = b_logprobs[mb_inds]
+                logratio = newlogprob - mb_old_probs
                 ratio = logratio.exp()
 
                 with torch.no_grad():

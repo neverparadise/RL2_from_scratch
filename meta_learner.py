@@ -15,6 +15,7 @@ from buffers.buffer import RolloutBuffer
 from ppo import PPO
 from utils.sampler import BaseSampler, RL2Sampler
 from utils.tb_logger import TBLogger
+import datetime
 
 
 class MetaLearner:
@@ -27,6 +28,7 @@ class MetaLearner:
         test_tasks: List[int],
         args, configs
     ) -> None:
+        
         self.env = env
         self.env_name = args.env_name
         self.agent = agent
@@ -35,7 +37,7 @@ class MetaLearner:
         self.tb_logger = tb_logger
         self.save_periods = args.save_periods
         self.weight_path = args.weight_path
-        self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}"
+        self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
         self.max_step: int = args.max_episode_steps
         self.num_samples: int = args.rollout_steps
         self.num_iterations: int = configs["n_epochs"]
@@ -84,11 +86,11 @@ class MetaLearner:
 
             print(f"=============== Iteration {iteration} ===============")
             indices = np.random.randint(len(self.train_tasks), size=self.meta_batch_size)
+            print(f"Task indices {indices}")
             for i, index in enumerate(indices):
                 self.env.reset_task(index)
                 self.agent.policy.is_deterministic = False
-
-                print(f"[{i + 1}/{self.meta_batch_size}] collecting samples")
+                print(f"[{i + 1}/{self.meta_batch_size}] collecting samples, current task: {self.env.get_task()}")
                 trajs: List[Dict[str, np.ndarray]] = self.sampler.obtain_samples()
                 self.buffer.add_trajs(trajs)
 
@@ -99,7 +101,6 @@ class MetaLearner:
             if iteration % self.save_periods == 0:
                 if not os.path.exists(self.save_file_path):
                     self.save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',self.save_file_path))
-                    print(self.save_file_path)
                     try:
                         os.mkdir(self.save_file_path)
                     except:
@@ -111,7 +112,8 @@ class MetaLearner:
                             os.mkdir(self.save_file_path)
                         except:
                             pass
-                ckpt_path = os.path.join(self.save_file_path, "checkpoint_" + str(iteration) + ".pt")
+                ckpt_path = os.path.join(self.save_file_path,"checkpoint_" + str(iteration) + ".pt")
+                print(self.save_file_path)
                 torch.save(
                     {
                         "policy": self.agent.policy.state_dict(),
