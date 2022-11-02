@@ -10,6 +10,7 @@ import torch
 import pygame, sys
 from pygame.locals import *
 import time
+from typing import List, Union, Any, Dict, List, Tuple
 
 def semi_circle_goal_sampler():
     r = 1.0
@@ -36,18 +37,23 @@ from gym import spaces
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def semi_circle_goal_sampler():
+def semi_circle_goal_sampler(num_tasks):
     r = 1.0
-    angle = random.uniform(0, np.pi)
-    goal = r * np.array((np.cos(angle), np.sin(angle)))
-    return goal
+    angle = np.random.uniform(0, np.pi, size=(num_tasks,))
+    goals = r * np.array((np.cos(angle), np.sin(angle)))
+    goals = goals.reshape((num_tasks, 2))
+    tasks = [{"goal": goal} for goal in goals]
+    return tasks
 
 
-def circle_goal_sampler():
+def circle_goal_sampler(num_tasks):
     r = 1.0
-    angle = random.uniform(0, 2*np.pi)
-    goal = r * np.array((np.cos(angle), np.sin(angle)))
-    return goal
+    angle = random.uniform(0, 2*np.pi, size=(num_tasks,))
+    goals = r * np.array((np.cos(angle), np.sin(angle)))
+    goals = goals.reshape((num_tasks, 2))
+    tasks = [{"goal": goal} for goal in goals]
+    return tasks
+
 
 
 GOAL_SAMPLERS = {
@@ -76,8 +82,6 @@ class PointEnv(Env):
         else:
             raise NotImplementedError(goal_sampler)
         self.tick=0.001
-        self.reset_task()
-        self.task_dim = 2
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,))
         # we convert the actions from [-1, 1] to [-0.1, 0.1] in the step() function
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
@@ -88,22 +92,29 @@ class PointEnv(Env):
         self.height = 600
         self.window = pygame.display.set_mode((self.width,self.height), 0, 32)
         pygame.display.set_caption('PointEnv')
+        self.tasks = self.sample_tasks(num_tasks)
+        self._task = self.tasks[0]
+        self._goal = self._task["goal"]
+        self.task_dim = 2
 
-    def sample_task(self):
-        goal = self.goal_sampler()
-        return goal
+
+    def get_all_task_idx(self) -> List[int]:
+        return list(range(len(self.tasks)))
+
+    def reset_task(self, idx: int) -> None:
+        self._task = self.tasks[idx]
+        self.goal_pos = self._task
+        self.reset()
 
     def set_task(self, task):
         self._goal = task
 
     def get_task(self):
-        return self._goal
+        return np.array(self._goal)
 
-    def reset_task(self, task=None):
-        if task is None:
-            task = self.sample_task()
-        self.set_task(task)
-        return task
+    def sample_tasks(self, num_tasks):
+        tasks = self.goal_sampler(num_tasks)
+        return tasks
 
     def reset_model(self):
         self._state = np.zeros(2)
@@ -121,27 +132,31 @@ class PointEnv(Env):
         new_array = np.array([new_x, new_y])
         return new_array
         
-    def render(self):
-        time.sleep(self.tick)
-        #background_color=(255, 255, 255)
-        #self.window.fill(background_color) 없으면 경로 남음
-        goal_state = self.upscale(self._goal)
-        agent_state = self.upscale(self._state)
-        pygame.draw.circle(self.window, (0, 255, 0), goal_state, 4)
-        pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
-        pygame.display.update()
+    def render(self, mode):
+        if mode=='text':
+            print(f"agent_pos: {self._state}, goal_pos: {self._goal}")
+        elif mode=='human':
+            time.sleep(self.tick)
+            #background_color=(255, 255, 255)
+            #self.window.fill(background_color) 없으면 경로 남음
+            goal_state = self.upscale(self._goal)
+            agent_state = self.upscale(self._state)
+            pygame.draw.circle(self.window, (0, 255, 0), goal_state, 6)
+            pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
+            pygame.display.update()
+        else:
+            pass
             
     def reset(self):
         obs = self.reset_model()
-        if self.is_render==True:
-            background_color=(255, 255, 255)
-            self.window.fill(background_color)
-            pygame.display.update()
-            goal_state = self.upscale(self._goal)
-            agent_state = self.upscale(obs)
-            pygame.draw.circle(self.window, (0, 255, 0), goal_state, 4)
-            pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
-            pygame.display.update()
+        background_color=(255, 255, 255)
+        self.window.fill(background_color)
+        pygame.display.update()
+        goal_state = self.upscale(self._goal)
+        agent_state = self.upscale(obs)
+        pygame.draw.circle(self.window, (0, 255, 0), goal_state, 4)
+        pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
+        pygame.display.update()
         return obs
 
     def _get_obs(self):
@@ -166,10 +181,9 @@ class PointEnv(Env):
 class SparsePointEnv(PointEnv):
     """ Reward is L2 distance given only within goal radius """
 
-    def __init__(self, goal_radius=0.2, max_episode_steps=100, goal_sampler='semi-circle', is_render=False):
-        super().__init__(max_episode_steps=max_episode_steps, goal_sampler=goal_sampler, is_render=is_render)
+    def __init__(self, num_tasks=20, goal_radius=0.2, max_episode_steps=100, goal_sampler='semi-circle', is_render=False):
+        super().__init__(num_tasks=20, max_episode_steps=max_episode_steps, goal_sampler=goal_sampler, is_render=is_render)
         self.goal_radius = goal_radius
-        self.reset_task()
 
     def sparsify_rewards(self, r):
         ''' zero out rewards when outside the goal radius '''
@@ -193,15 +207,14 @@ class SparsePointEnv(PointEnv):
     
     def reset(self):
         obs = self.reset_model()
-        if self.is_render==True:
-            background_color=(255, 255, 255)
-            self.window.fill(background_color)
-            pygame.display.update()
-            goal_state = self.upscale(self._goal)
-            agent_state = self.upscale(obs)
-            pygame.draw.circle(self.window, (0, 255, 0), goal_state, 4)
-            pygame.draw.circle(self.window, (0, 0, 128), goal_state, self.goal_radius*(self.width/2))
-            pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
-            pygame.display.update()
+        background_color=(255, 255, 255)
+        self.window.fill(background_color)
+        pygame.display.update()
+        goal_state = self.upscale(self._goal)
+        agent_state = self.upscale(obs)
+        pygame.draw.circle(self.window, (0, 255, 0), goal_state, 4)
+        pygame.draw.circle(self.window, (0, 0, 128), goal_state, self.goal_radius*(self.width/2))
+        pygame.draw.circle(self.window, (255, 0, 0) , agent_state, 4)
+        pygame.display.update()
         return obs
-    
+

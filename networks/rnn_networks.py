@@ -22,10 +22,10 @@ def _format(x, device, minibatch_size=1, is_training=False):
         x = x.to(device=device)
     else:
         x = x.to(device=device)
-    if len(x.shape) < 3:
-        x = x.reshape(1, 1, -1) # [L, N, flatten]
+    if len(x.shape) < 2:
+        x = x.reshape(1, -1) # [L, N, flatten]
     if is_training:
-        x = x.reshape(1, minibatch_size, -1)
+        x = x.reshape(minibatch_size, -1)
     return x
 
 

@@ -33,7 +33,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # ? Experiments information
-    parser.add_argument('--exp_name', type=str, default="RL2_Evaluation",
+    parser.add_argument('--exp_name', type=str, default="RL2PPO_Evaluation",
                         help="the name of this experiment")
     parser.add_argument("--meta_learning", type=bool, default=True)
     parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)),

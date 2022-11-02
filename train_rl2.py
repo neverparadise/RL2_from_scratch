@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from distutils.util import strtobool
 import argparse
 import yaml
+# import ray
 
 import gym
 from gym.envs.registration import register
@@ -47,7 +48,7 @@ def parse_args():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
-    parser.add_argument("--render", type=bool, default=True)
+    parser.add_argument("--render", type=bool, default=False)
     parser.add_argument("--render_mode", type=str, default="human")
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
@@ -56,25 +57,24 @@ def parse_args():
                         help="directory of tensorboard")
 
     #  Environments information
-    #  parser.add_argument("--env_name", type=str, default="SparsePointEnv")
-    parser.add_argument("--env_name", type=str, default="AntDirEnv")
+    # parser.add_argument("--env_name", type=str, default="PointEnv")
+    # parser.add_argument("--env_name", type=str, default="SparsePointEnv")
+    parser.add_argument("--env_name", type=str, default="HalfCheetahDirEnv")
+    # parser.add_argument("--env_name", type=str, default="AntDirEnv")
     # parser.add_argument("--env_name", type=str, default="AntDir2DEnv")
     # parser.add_argument("--env_name", type=str, default="AntGoalEnv")
-
-
     parser.add_argument("--total-timesteps", type=int, default=1000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=512)
     parser.add_argument('--max_episode_steps', default=500)
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")
-    parser.add_argument("--num-tasks", type=int, default=4)  # meta batch size
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="Toggle learning rate annealing for policy and value networks")
 
     # Hyperparameter config
     parser.add_argument('--config_path', type=str,
-                        default='./configs/dir_config.yaml')
+                        default='./configs/cheetah_dir_config.yaml')
     args = parser.parse_args()
     return args
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     # env, seed
     if args.meta_learning:
-        env, tasks = make_env_tasks(args)
+        env, tasks = make_env_tasks(args, configs)
     else:
         env = make_env(args)
 
@@ -140,10 +140,10 @@ if __name__ == "__main__":
     buffer = RolloutBuffer(args, configs)
 
     # execution
-    sampler = Sampler(env, agent, args, configs)
-    for i in range(10):
-        trajs = sampler.obtain_samples()
-        buffer.add_trajs(trajs)
+    # sampler = RL2Sampler(env, agent, args, configs)
+    # for i in range(10):
+    #     trajs = sampler.obtain_samples()
+    #     buffer.add_trajs(trajs)
 
     # train
     print("Meta training start...")
@@ -156,5 +156,5 @@ if __name__ == "__main__":
                     args=args, configs=configs
                     )
 
-    # meta_learner.meta_train()
+    meta_learner.meta_train()
 

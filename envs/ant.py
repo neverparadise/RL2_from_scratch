@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import random
 from envs.mujoco_env import MujocoEnv
+from typing import List, Union, Any, Dict, List, Tuple
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -70,11 +71,14 @@ class AntDirEnv(AntEnv):
     """
     Forward/backward ant direction environment
     """
-    def __init__(self, num_tasks=2, max_episode_steps=200):
+    def __init__(self, num_tasks=4, max_episode_steps=200):
         directions = [-1.0, 1.0, -1.0, 1.0]
         self.tasks = [{"direction": direction} for direction in directions]
-        assert num_tasks == len(self.tasks)
-        self.set_task(self.sample_tasks(1)[0])
+        self._task = self.sample_tasks(1)[0]
+        print(self.tasks)
+        print(self._task)
+
+        self.set_task(self._task)
         self._max_episode_steps = max_episode_steps
         self.task_dim = 1
         super(AntDirEnv, self).__init__()
@@ -82,7 +86,7 @@ class AntDirEnv(AntEnv):
     def step(self, action):
         torso_xyz_before = np.array(self.get_body_com("torso"))
 
-        direct = (np.cos(self.goal_direction), np.sin(self.goal_direction))
+        direct = (np.cos(self._goal_dir), np.sin(self._goal_dir))
 
         self.do_simulation(action, self.frame_skip)
         torso_xyz_after = np.array(self.get_body_com("torso"))
@@ -110,6 +114,11 @@ class AntDirEnv(AntEnv):
     def get_all_task_idx(self) -> List[int]:
         return list(range(len(self.tasks)))
 
+    def reset_task(self, idx: int) -> None:
+        self._task = self.tasks[idx]
+        self._goal_dir = self._task["direction"]
+        self.reset()
+
     def sample_tasks(self, n_tasks):
         # for fwd/bwd env, goal direc is backwards if - 1.0, forwards if + 1.0
         return [random.choice([-1.0, 1.0]) for _ in range(n_tasks, )]
@@ -117,20 +126,26 @@ class AntDirEnv(AntEnv):
     def set_task(self, task):
         if isinstance(task, np.ndarray):
             task = task[0]
-        self.goal_direction = task
+        self._goal_dir = task
 
     def get_task(self):
-        return np.array([self.goal_direction])
+        return np.array([self._goal_dir])
 
 
 class AntDir2DEnv(AntDirEnv):
-    def __init__(num_tasks=2, max_episode_steps=200):
-        super().__init__()
+    def __init__(self, num_tasks=100, max_episode_steps=200):
+        super().__init__(num_tasks=100, max_episode_steps=200)
+        self.tasks = self.sample_tasks(num_tasks)
+        self._task = self.tasks[0]
+        print(self.tasks)
+        print(self._task)
+
     def sample_tasks(self, n_tasks):
         # for fwd/bwd env, goal direc is backwards if - 1.0, forwards if + 1.0
         directions = np.array([random.gauss(mu=0, sigma=1) for _ in range(n_tasks * 2)]).reshape((n_tasks, 2))
         directions /= np.linalg.norm(directions, axis=1)[..., np.newaxis]
         return directions
+
 
 
 class AntDirOracleEnv(AntDirEnv):
@@ -151,10 +166,13 @@ class AntDir2DOracleEnv(AntDir2DEnv):
         ])
 
 
-
 class AntGoalEnv(AntEnv):
-    def __init__(self, max_episode_steps=200):
-        self.set_task(self.sample_tasks(1)[0])
+    def __init__(self, num_tasks=5, max_episode_steps=200):
+        self.tasks = self.sample_tasks(num_tasks)
+        self._task = self.sample_tasks(1)[0]
+        self.set_task(self._task)
+        print(self.tasks)
+        print(self._task)
         self._max_episode_steps = max_episode_steps
         self.task_dim = 2
         super(AntGoalEnv, self).__init__()
@@ -185,6 +203,14 @@ class AntGoalEnv(AntEnv):
         a = np.array([random.random() for _ in range(num_tasks)]) * 2 * np.pi
         r = 3 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
         return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
+
+    def get_all_task_idx(self) -> List[int]:
+        return list(range(len(self.tasks)))
+
+    def reset_task(self, idx: int) -> None:
+        self._task = self.tasks[idx]
+        self.goal_pos = self._task
+        self.reset()
 
     def set_task(self, task):
         self.goal_pos = task

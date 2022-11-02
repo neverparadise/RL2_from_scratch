@@ -63,16 +63,10 @@ class BaseSampler:
         self.env.seed(seed=self.seed)
         obs = self.env.reset()
         done = False
+        info = None
         while not (done or cur_step == self.max_step or self.cur_samples == max_samples):
-            if self.render and (self.render_mode is not None):
-               self.env.render(mode=self.render_mode)
-            elif self.render and (self.render_mode is None):
-               self.env.render()
-            elif not self.render and (self.render_mode is None):
-               pass
-
             with torch.no_grad():
-                action, log_prob, next_pi_hidden = self.agent.get_action(obs, self.pi_hidden)
+                action, log_prob, entropy, next_pi_hidden = self.agent.get_action(obs, self.pi_hidden)
             value, next_v_hidden = self.agent.get_value(obs, self.v_hidden)
             next_obs, reward, done, info = self.env.step(action)
             reward = np.array(reward).reshape(-1)
@@ -101,6 +95,13 @@ class BaseSampler:
             obs = next_obs.reshape(-1)
             cur_step += 1
             self.cur_samples += 1
+            if self.render and (self.render_mode is not None):
+               self.env.render(mode=self.render_mode)
+            elif not self.render and (self.render_mode is None):
+               pass
+            elif self.render and (self.render_mode is None):
+               self.env.render()
+
 
         return dict(
             observations=np.array(observations),
@@ -169,7 +170,7 @@ class RL2Sampler(BaseSampler):
             # make transition tuple
             tran = (obs, action, reward, done)
             with torch.no_grad():
-                action, log_prob, next_pi_hidden = self.agent.get_action(tran, self.pi_hidden)
+                action, log_prob, entropy, next_pi_hidden = self.agent.get_action(tran, self.pi_hidden)
             value, next_v_hidden = self.agent.get_value(tran, self.v_hidden)
             next_obs, reward, done, info = self.env.step(action)
             reward = np.array(reward).reshape(-1)

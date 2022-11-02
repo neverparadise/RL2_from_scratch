@@ -20,6 +20,8 @@ class PPO:
         self.num_epochs = configs["k_epochs"]
         self.mini_batch_size = configs["mini_batch_size"]
         self.clip_param = configs["lr_clip_range"]
+        self.ent_coef = configs["ent_coef"]
+        self.vf_coef = configs["vf_coef"]
         self.is_continuous = configs["is_continuous"]
         self.is_deterministic = configs["is_dterministic"]
 
@@ -39,26 +41,29 @@ class PPO:
             "vf": self.vf,
         }
 
-    def get_action(self, transition, hidden, is_training=False):
+    def get_action(self, transition, hidden, action=None, is_training=False):
         dist, hidden = self.policy(transition, hidden, is_training)
-        if self.is_deterministic:
-            action = dist.mean
-            log_prob = torch.zeros(1)
-        else:
-            action = dist.sample()
-            log_prob = dist.log_prob(action)
-            log_prob = log_prob.sum(-1)
         if is_training:
-            return action, dist.log_prob(action), hidden
-        else:
+            return action, dist.log_prob(action), dist.entropy().sum(1), hidden
+        else: # evaluation
+            if self.is_deterministic:
+                action = dist.mean
+                log_prob = torch.zeros(1)
+            else: # stochastic
+                action = dist.sample()
+                log_prob = dist.log_prob(action)
+                log_prob = log_prob.sum(-1)
             while len(action.shape) != 1:
                 action = action.squeeze(0)
                 log_prob = log_prob.squeeze(0)
             if self.is_continuous:
-                return action.detach().to('cpu').numpy(), log_prob.detach().to('cpu').numpy(), hidden.detach().cpu().numpy()
+                action = action.detach().to('cpu').numpy()
             else:
-                return action.detach().to('cpu').numpy().item(), log_prob.detach().to('cpu').numpy(), hidden.detach().cpu().numpy()
-
+                action = action.detach().to('cpu').numpy().item()
+            log_prob = log_prob.detach().to('cpu').numpy()
+            entropy = dist.entropy().sum(1).detach().to('cpu').numpy()
+            return action, log_prob, entropy, hidden.detach().cpu().numpy()
+                        
     def get_value(self, transition, hidden=None, is_training=False):
         value, new_hidden = self.vf(transition, hidden, is_training)
         return value.detach().cpu().numpy(), new_hidden.detach().cpu().numpy()
@@ -122,9 +127,10 @@ class PPO:
                 value_loss = F.mse_loss(value_batch.view(-1, 1), return_batch)
 
                 # Policy Loss
-                _, new_log_prob_batch, _ = self.get_action(
+                _, new_log_prob_batch, entropy, _ = self.get_action(
                     trans_batch,
                     pi_hidden_batch,
+                    action_batch,
                     is_training=True
                 )
 
@@ -135,10 +141,12 @@ class PPO:
                     torch.clamp(ratio, 1 - self.clip_param, 1 + self.clip_param) * advant_batch
                 )
 
+                entropy_loss = entropy.mean()
+                
                 policy_loss = -torch.min(policy_loss, clipped_loss).mean()
 
                 # Backward()
-                total_loss = policy_loss + 0.5 * value_loss
+                total_loss = policy_loss + self.vf_coef * value_loss + self.ent_coef * entropy_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 self.optimizer.step()
