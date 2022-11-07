@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument("--render_mode", type=str, default=None)
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
-    parser.add_argument("--save_periods", type=int, default=20)
+    parser.add_argument("--save_periods", type=int, default=100)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
 
@@ -67,7 +67,7 @@ def parse_args():
     parser.add_argument("--total-timesteps", type=int, default=1000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=512)
-    parser.add_argument('--max_episode_steps', default=500)
+    parser.add_argument('--max_episode_steps', default=1000)
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
@@ -109,6 +109,9 @@ def add_state_action_info(env, configs):
                     "is_continuous": is_continuous})
     return configs
 
+def train():
+    pass
+    
 
 if __name__ == "__main__":
     # argparser, configs, logger

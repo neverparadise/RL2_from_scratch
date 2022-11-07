@@ -74,10 +74,10 @@ def parse_args():
             # help="the id of the environment")
     parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
     # parser.add_argument("--env_name", type=str, default="Ant")
-    parser.add_argument("--total-timesteps", type=int, default=1000000,
+    parser.add_argument("--total-timesteps", type=int, default=5000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
-    parser.add_argument('--max_episode_steps', default=500)
+    parser.add_argument('--max_episode_steps', default=1000)
     parser.add_argument("--num-envs", type=int, default=4,
                         help="the number of parallel game environments")
     parser.add_argument("--num-tasks", type=int, default=4)  # meta batch size
@@ -85,10 +85,11 @@ def parse_args():
                         help="Toggle learning rate annealing for policy and value networks")
 
     # Hyperparameter configs
-    parser.add_argument('--configs_path', type=str,
+    parser.add_argument('--config_path', type=str,
                         default='./configs/base_config.yaml')
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.rollout_steps)
+    args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
     return args
 
 
