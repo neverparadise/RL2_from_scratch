@@ -186,7 +186,7 @@ class Agent(nn.Module):
 if __name__ == "__main__":
     # argparser, configs, logger
     args = parse_args()
-    with open(args.configs_path) as file:
+    with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
     tb_logger = TBLogger(args, configs)
     now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')

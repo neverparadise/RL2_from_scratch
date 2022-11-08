@@ -7,7 +7,7 @@ ray.init(num_cpus=96, num_gpus=8)
 
 num_gpus = 8
 num_cpus = 96
-exp_per_cpus = 2
+exp_per_cpus = 4
 num_exps = num_cpus / exp_per_cpus
 gpu_fractions = num_gpus / num_exps
 
@@ -25,8 +25,6 @@ for seed in seeds:
 
 @ray.remote(num_cpus=exp_per_cpus, num_gpus=gpu_fractions)
 def distributed_train(command):
-    print(exp_per_cpus)
-    print(gpu_fractions)
     subprocess.run(command, shell=True)
 
 refs = [distributed_train.remote(cmd) for cmd in cmds]
