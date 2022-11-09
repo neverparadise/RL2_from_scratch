@@ -23,7 +23,7 @@ class PPO:
         self.ent_coef = configs["ent_coef"]
         self.vf_coef = configs["vf_coef"]
         self.is_continuous = configs["is_continuous"]
-        self.is_deterministic = configs["is_dterministic"]
+        self.is_deterministic = configs["is_deterministic"]
 
         # Networks
         if self.meta_learning:

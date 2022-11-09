@@ -18,9 +18,9 @@ import random
 import torch
 import torch.optim as optim
 from ppo import PPO
-from networks import RNNActor, RNNCritic
+from networks import RL2Actor, RL2Critic
 from buffers.buffer import RolloutBuffer
-from meta_learner import MetaLearner
+from meta_learner_parallel import MetaLearner
 from torch.utils.tensorboard import SummaryWriter
 from utils.tb_logger import TBLogger
 from utils.sampler import BaseSampler, RL2Sampler
@@ -36,7 +36,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # ? Experiments information
-    parser.add_argument('--exp_name', type=str, default="RL2",
+    parser.add_argument('--exp_name', type=str, default="RL2_Parallel",
                         help="the name of this experiment")
     parser.add_argument("--meta_learning", type=bool, default=True)
     parser.add_argument("--load", type=bool, default=False)
@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
-    parser.add_argument("--render", type=bool, default=False)
+    parser.add_argument("--render", type=bool, default=True)
     parser.add_argument("--render_mode", type=str, default=None)
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
@@ -68,9 +68,12 @@ def parse_args():
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=512)
     parser.add_argument('--num_episodes_per_trial', default=2)
-    parser.add_argument('--max_episode_steps', default=1000)
+    parser.add_argument('--max_episode_steps', default=1024)
+    parser.add_argument('--max_samples', default=2048)
+    
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")
+    parser.add_argument("--parallel_processing", type=bool, default=True)
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="Toggle learning rate annealing for policy and value networks")
 
@@ -119,7 +122,8 @@ if __name__ == "__main__":
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
-    args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
+    args.max_samples = args.num_episodes_per_trial * args.max_episode_steps
+    args.batch_size = int(configs["meta_batch_size"] * args.max_samples)
     args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
 
     tb_logger = TBLogger(args, configs)
@@ -154,7 +158,7 @@ if __name__ == "__main__":
     # train
     print("Meta training start...")
     meta_learner = MetaLearner(
-                    env=env,
+                    env_creator=make_env_tasks,
                     agent=agent,
                     tb_logger=tb_logger, 
                     train_tasks=list(tasks[: configs["num_train_tasks"]]),
@@ -162,5 +166,5 @@ if __name__ == "__main__":
                     args=args, configs=configs
                     )
 
-    meta_learner.meta_train()
+    meta_learner.meta_train_parallel()
 

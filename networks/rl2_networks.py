@@ -16,7 +16,7 @@ def to_tensor(np_array, device="cpu"):
     return np_array.float().to(device)
 
 
-def _format(x, device, minibatch_size=1, is_training=False):
+def _format(x, dim, device, minibatch_size=1, is_training=False):
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x, dtype=torch.float32)
         x = x.to(device=device)
@@ -25,7 +25,7 @@ def _format(x, device, minibatch_size=1, is_training=False):
     if len(x.shape) < 3:
         x = x.reshape(1, 1, -1) # [L, N, flatten]
     if is_training:
-        x = x.reshape(1, minibatch_size, -1)
+        x = x.reshape(1, -1, dim)
     return x
 
 
@@ -33,7 +33,9 @@ class RL2Actor(nn.Module):
     def __init__(self, args, configs) -> None:
         super().__init__()
         self.device = torch.device(args.device)
-        self.input_dim = configs["state_dim"] + configs["action_dim"] + 2 # 2: reward, done dimension
+        self.state_dim = configs["state_dim"]
+        self.action_dim= configs["action_dim"]
+        self.input_dim = self.state_dim + self.action_dim + 2 # 2: reward, done dimension
         self.minibatch_size = configs["mini_batch_size"]
         self.is_continuous = configs["is_continuous"]
         self.hidden_dim = configs["hidden_dim"]
@@ -60,10 +62,10 @@ class RL2Actor(nn.Module):
 
     def forward(self, transition, hidden=None, is_training=False):
         state, action, reward, done = transition
-        state = _format(state, self.device, self.minibatch_size, is_training)
-        action = _format(action, self.device, self.minibatch_size, is_training)
-        reward = _format(reward, self.device, self.minibatch_size, is_training)
-        done = _format(done, self.device, self.minibatch_size, is_training)
+        state = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
+        action = _format(action, self.action_dim, self.device, self.minibatch_size, is_training)
+        reward = _format(reward, 1, self.device, self.minibatch_size, is_training)
+        done = _format(done, 1, self.device, self.minibatch_size, is_training)
         concatenated = torch.cat([state, action, reward, done], dim=-1)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous()
@@ -87,6 +89,9 @@ class RL2Critic(nn.Module):
         super().__init__()
         # information        
         self.device = torch.device(args.device)
+        self.state_dim = configs["state_dim"]
+        self.action_dim= configs["action_dim"]
+        self.input_dim = self.state_dim + self.action_dim + 2 # 2: reward, done dimension
         self.minibatch_size = configs["mini_batch_size"]
         self.input_dim = configs["state_dim"] + configs["action_dim"] + 2 # 2: reward, done dimension
         self.is_continuous = configs["is_continuous"]
@@ -107,10 +112,10 @@ class RL2Critic(nn.Module):
              
     def forward(self, transition, hidden=None, is_training=False):
         state, action, reward, done = transition
-        state = _format(state, self.device, self.minibatch_size, is_training)
-        action = _format(action, self.device, self.minibatch_size, is_training)
-        reward = _format(reward, self.device, self.minibatch_size, is_training)
-        done = _format(done, self.device, self.minibatch_size, is_training)
+        state = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
+        action = _format(action, self.action_dim, self.device, self.minibatch_size, is_training)
+        reward = _format(reward, 1, self.device, self.minibatch_size, is_training)
+        done = _format(done, 1, self.device, self.minibatch_size, is_training)
         concatenated = torch.cat([state, action, reward, done], dim=-1)
         x = self.embedding(concatenated)
         hidden = to_tensor(hidden, device=self.device)

@@ -1,7 +1,7 @@
 # algorithm config
 lr: 0.0005
 mini_batch_size: 32
-meta_batch_size: 16
+meta_batch_size: 2
 num_tasks: 4
 num_train_tasks: 2
 num_test_tasks: 2
@@ -28,7 +28,7 @@ hidden_dim: 128
 is_recurrent: True
 num_rnn_layers: 2
 seq_len: 1
-is_dterministic: False
+is_deterministic: False
 layer_normalization: False
 # activation: 'tanh'
 
