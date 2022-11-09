@@ -1,7 +1,7 @@
 # algorithm config
 lr: 0.0005
 mini_batch_size: 32
-meta_batch_size: 3
+meta_batch_size: 8
 num_tasks: 4
 num_train_tasks: 2
 num_test_tasks: 2

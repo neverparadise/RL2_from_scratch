@@ -171,6 +171,9 @@ class MetaLearner:
         test_results = {}
         test_return = np.array([])
         
+        print(f"Start the meta-test evaluation {iteration}")
+        
+        #! TODO: 여기 동작안하고 있음
         traj_refs = []
         for sampler in self.test_samplers:
             task_idx = np.random.randint(len(self.test_tasks), size=1).item()
@@ -178,6 +181,8 @@ class MetaLearner:
             ref = sampler.obtain_samples.remote(task_idx)
             traj_refs.append(ref)
         workers_trajs = ray.get(traj_refs) 
+        
+        print(f"Start the return calculation {iteration}")
         
         for trajs in workers_trajs:
             for traj in trajs:

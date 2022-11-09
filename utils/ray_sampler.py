@@ -3,17 +3,25 @@ import numpy as np
 import torch
 import gym
 from gym.envs.registration import register
-from envs import *
 from typing import Dict, List, NamedTuple
 import psutil
+import yaml
+from typing import Any, Dict, List
+import os
+
+pardir = os.pardir
+cwd = os.getcwd()
+print(cwd)
+with open(f"{cwd}/configs/cheetah_dir_config.yaml") as file:
+    config: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
 
 num_cpus = psutil.cpu_count()
-num_envs = 4
-meta_batch_size = 3
-num_test_tasks = 1
+num_gpus = torch.cuda.device_count()
+meta_batch_size = config["meta_batch_size"]
+num_test_tasks = config["num_test_tasks"]
 worker_per_cpus = int(num_cpus / (meta_batch_size + num_test_tasks))
-worker_per_gpus = float(1 / (meta_batch_size+ num_test_tasks))
-# ! 다 400개씩인데 고칠 것.
+worker_per_gpus = float(num_gpus / (meta_batch_size+ num_test_tasks))
+
 print(psutil.cpu_count())
 print(worker_per_cpus)
 print(worker_per_gpus)

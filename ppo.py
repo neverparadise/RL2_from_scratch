@@ -110,9 +110,11 @@ class PPO:
         sum_value_loss: float = 0
 
         for _ in range(self.num_epochs):
+            
             sum_total_loss_mini_batch = 0
             sum_policy_loss_mini_batch = 0
             sum_value_loss_mini_batch = 0
+            inner_step = 0
             for (
                 obs_batch,
                 action_batch,
@@ -134,6 +136,8 @@ class PPO:
                 advant_batches,
                 log_prob_batches,
             ):
+                inner_step += 1
+                print(inner_step)
                 # Value Loss
                 trans_batch = (obs_batch.to(self.device), action_batch.to(self.device),\
                     rew_batch.to(self.device), done_batch.to(self.device))
