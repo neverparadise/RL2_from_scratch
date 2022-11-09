@@ -165,7 +165,7 @@ class MetaLearner:
         log_values: Dict[str, float],
     ) -> None:
         test_results = {}
-        test_return: np.array([])
+        test_return = np.array([])
         
         traj_refs = []
         for sampler in self.test_samplers:
@@ -179,7 +179,7 @@ class MetaLearner:
             for traj in trajs:
                 return_ =  np.array([np.sum(traj["rewards"])])
                 test_return = np.concatenate([return_, test_return])
-        test_return += test_return.mean().item()
+        test_return = test_return.mean().item()
 
 
         test_results["return"] = test_return / len(self.test_tasks)

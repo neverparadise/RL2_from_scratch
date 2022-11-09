@@ -31,6 +31,12 @@ logger.setLevel(logging.INFO)
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# GPU_NUM = 1 # 원하는 GPU 번호 입력
+# device = torch.device(f'cuda:{GPU_NUM}' if torch.cuda.is_available() else 'cpu')
+# torch.cuda.set_device(device) # change allocation of current GPU
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -46,7 +52,7 @@ def parse_args():
                         help="if toggled, `torch.backends.cudnn.deterministic=False`")
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="if toggled, cuda will be enabled by default")
-    parser.add_argument('--device', default='cuda:1')
+    parser.add_argument('--device', default='cuda')
     parser.add_argument("--seed", type=int, default=1,
                         help="seed of the experiment")
     parser.add_argument("--render", type=bool, default=True)
@@ -68,8 +74,8 @@ def parse_args():
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=512)
     parser.add_argument('--num_episodes_per_trial', default=2)
-    parser.add_argument('--max_episode_steps', default=1024)
-    parser.add_argument('--max_samples', default=2048)
+    parser.add_argument('--max_episode_steps', default=1000)
+    parser.add_argument('--max_samples', default=2000)
     
     parser.add_argument("--num-envs", type=int, default=1,
                         help="the number of parallel game environments")

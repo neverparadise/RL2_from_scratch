@@ -12,7 +12,7 @@ num_envs = 4
 meta_batch_size = 2
 num_test_tasks = 2
 worker_per_cpus = int(num_cpus / (meta_batch_size + num_test_tasks))
-worker_per_gpus = float(2 / (meta_batch_size + num_test_tasks))
+worker_per_gpus = float(1 / (meta_batch_size + num_test_tasks))
 # ! 다 400개씩인데 고칠 것.
 print(psutil.cpu_count())
 print(worker_per_cpus)
@@ -54,8 +54,8 @@ class RaySampler:
         self.worker_idx = worker_idx
     
     def print_worker_infos(self):
-        logger.info(env_per_cpus)
-        logger.info(env_per_gpus)
+        logger.info(worker_per_cpus)
+        logger.info(worker_per_gpus)
         logger.info(torch.cuda.is_available)
         logger.info("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         logger.info(f"current device: {torch.cuda.current_device()}")
@@ -95,7 +95,7 @@ class RaySampler:
         done = np.zeros(1)
         info = None
         
-        while not (done or cur_step == self.max_step or self.cur_samples == self.max_samples):
+        while not (done or cur_step == self.max_step):
             tran = (obs, action, reward, done)
             with torch.no_grad():
                 action, log_prob, entropy, next_pi_hidden = self.agent.get_action(tran, self.pi_hidden)
