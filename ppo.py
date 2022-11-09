@@ -2,6 +2,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from dataclasses import dataclass, asdict, astuple
@@ -32,6 +33,12 @@ class PPO:
         else:
             self.policy = RNNActor(args, configs).to(self.device)
             self.vf = RNNCritic(args, configs).to(self.device)
+
+        if torch.cuda.device_count() > 1:
+            print("Let's use", torch.cuda.device_count(), "GPUs!")
+            # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+            self.policy = nn.DataParallel(self.policy)
+            self.vf = nn.DataParallel(self.vf)
 
         self.optimizer = optim.Adam(
                 list(self.policy.parameters()) + list(self.vf.parameters()), lr=float(configs["lr"]))
