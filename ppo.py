@@ -9,6 +9,10 @@ from dataclasses import dataclass, asdict, astuple
 from networks import *
 
 
+def to_tensor(np_array, device):
+    if isinstance(np_array, np.ndarray):
+        return torch.from_numpy(np_array).float().to(device)
+    return np_array.float().to(device)
 
 class PPO:
     def __init__(
@@ -77,6 +81,8 @@ class PPO:
 
     # TODO: code refactoring
     def train_model(self, batch_size: int, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        
+        # ! 이 부분 개선해야함. yield 써서 메모리 사용량 줄여야 한다.
         num_mini_batch = int(batch_size / self.mini_batch_size) # 8192 / 64
         batch=asdict(batch)
         observations = batch["observations"]
@@ -129,23 +135,24 @@ class PPO:
                 log_prob_batches,
             ):
                 # Value Loss
-                trans_batch = (obs_batch, action_batch, rew_batch, done_batch)
-                value_batch, _ = self.vf(trans_batch, v_hidden_batch, is_training=True)
-                value_loss = F.mse_loss(value_batch.view(-1, 1), return_batch)
+                trans_batch = (obs_batch.to(self.device), action_batch.to(self.device),\
+                    rew_batch.to(self.device), done_batch.to(self.device))
+                value_batch, _ = self.vf(trans_batch, v_hidden_batch.to(self.device), is_training=True)
+                value_loss = F.mse_loss(value_batch.view(-1, 1), return_batch.to(self.device))
 
                 # Policy Loss
                 _, new_log_prob_batch, entropy, _ = self.get_action(
                     trans_batch,
-                    pi_hidden_batch,
-                    action_batch,
+                    pi_hidden_batch.to(self.device),
+                    action_batch.to(self.device),
                     is_training=True
                 )
 
-                ratio = torch.exp(new_log_prob_batch.view(-1, 1) - log_prob_batch)
+                ratio = torch.exp(new_log_prob_batch.view(-1, 1) - log_prob_batch.to(self.device))
 
-                policy_loss = ratio * advant_batch
+                policy_loss = ratio * advant_batch.to(self.device)
                 clipped_loss = (
-                    torch.clamp(ratio, 1 - self.clip_param, 1 + self.clip_param) * advant_batch
+                    torch.clamp(ratio, 1 - self.clip_param, 1 + self.clip_param) * advant_batch.to(self.device)
                 )
 
                 entropy_loss = entropy.mean()

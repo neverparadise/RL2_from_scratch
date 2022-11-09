@@ -9,10 +9,10 @@ import psutil
 
 num_cpus = psutil.cpu_count()
 num_envs = 4
-meta_batch_size = 2
-num_test_tasks = 2
+meta_batch_size = 3
+num_test_tasks = 1
 worker_per_cpus = int(num_cpus / (meta_batch_size + num_test_tasks))
-worker_per_gpus = float(1 / (meta_batch_size + num_test_tasks))
+worker_per_gpus = float(1 / (meta_batch_size+ num_test_tasks))
 # ! 다 400개씩인데 고칠 것.
 print(psutil.cpu_count())
 print(worker_per_cpus)

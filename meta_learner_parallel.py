@@ -123,6 +123,10 @@ class MetaLearner:
 
             print(f"Start the meta-gradient update of iteration {iteration}")
             log_values = self.agent.train_model(self.batch_size, batch)
+            
+            del workers_trajs
+            del batch
+            
             if iteration % self.save_periods == 0:
                 if not os.path.exists(self.save_file_path):
                     self.save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',self.save_file_path))
