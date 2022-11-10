@@ -49,20 +49,24 @@ class MetaLearner:
         self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
         self.max_step: int = args.max_episode_steps
         self.num_samples: int = args.rollout_steps
+        self.num_test_tasks = configs["num_test_tasks"]
         self.num_iterations: int = configs["n_epochs"]
         self.meta_batch_size: int = configs["meta_batch_size"]
         self.batch_size: int = self.meta_batch_size * self.num_samples
-
+        self.eval_periods = args.eval_periods
         
         if args.parallel_processing:
             self.train_samplers = []
             for i in range(self.meta_batch_size):
                 env, tasks = self.env_creator(args, configs)
                 self.train_samplers.append(RaySampler.remote(env, self.agent, args, configs, i))
+            print(self.train_samplers)
+                
             self.test_samplers = []
-            for i in range(len(self.test_tasks)):
+            for j in range(self.num_test_tasks):
                 env, tasks = self.env_creator(args, configs)
-                self.test_samplers.append(RaySampler.remote(env, self.agent, args, configs, i))
+                self.test_samplers.append(RaySampler.remote(env, self.agent, args, configs, j))
+            print(self.test_samplers)
         else:
             self.sampler = RL2Sampler(
                 env=env,
@@ -124,9 +128,6 @@ class MetaLearner:
             print(f"Start the meta-gradient update of iteration {iteration}")
             log_values = self.agent.train_model(self.batch_size, batch)
             
-            del workers_trajs
-            del batch
-            
             if iteration % self.save_periods == 0:
                 if not os.path.exists(self.save_file_path):
                     self.save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',self.save_file_path))
@@ -151,8 +152,35 @@ class MetaLearner:
                     },
                     ckpt_path,
                 )
-            self.meta_test_parallel(iteration, total_start_time, start_time, log_values)
-    
+            
+            if iteration % self.eval_periods == 0:
+                # * Meta-test procedure
+                test_results = {}
+                test_return = np.array([])
+                print(f"Start the meta-test evaluation {iteration}")
+                test_traj_refs = []
+                for sampler in self.test_samplers:
+                    task_idx = np.random.randint(len(self.test_tasks), size=1).item()
+                    #self.agent.policy.is_deterministic = True
+                    ref = sampler.obtain_samples.remote(task_idx)
+                    print(ref)
+                    test_traj_refs.append(ref)
+                test_workers_trajs = ray.get(test_traj_refs) 
+                print(f"Start the return calculation {iteration}")
+                for trajs in test_workers_trajs:
+                    for traj in trajs:
+                        return_ =  np.array([np.sum(traj["rewards"])])
+                        test_return = np.concatenate([return_, test_return])
+                test_return = test_return.mean().item()
+                test_results["return"] = test_return / len(self.test_tasks)
+                test_results["total_loss"] = log_values["total_loss"]
+                test_results["policy_loss"] = log_values["policy_loss"]
+                test_results["value_loss"] = log_values["value_loss"]
+                test_results["total_time"] = time.time() - total_start_time
+                test_results["time_per_iter"] = time.time() - start_time
+
+                self.log_on_tensorboard(test_results, iteration)
+            
     def log_on_tensorboard(self, test_results: Dict[str, Any], iteration: int) -> None:
         self.tb_logger.add("test/return", test_results["return"], iteration)
         self.tb_logger.add("train/total_loss", test_results["total_loss"], iteration)
@@ -175,17 +203,20 @@ class MetaLearner:
         
         #! TODO: 여기 동작안하고 있음
         traj_refs = []
+
         for sampler in self.test_samplers:
             task_idx = np.random.randint(len(self.test_tasks), size=1).item()
-            self.agent.policy.is_deterministic = True
+            #self.agent.policy.is_deterministic = True
             ref = sampler.obtain_samples.remote(task_idx)
             traj_refs.append(ref)
+            
         workers_trajs = ray.get(traj_refs) 
         
         print(f"Start the return calculation {iteration}")
         
         for trajs in workers_trajs:
             for traj in trajs:
+           
                 return_ =  np.array([np.sum(traj["rewards"])])
                 test_return = np.concatenate([return_, test_return])
         test_return = test_return.mean().item()

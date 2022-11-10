@@ -60,6 +60,8 @@ def parse_args():
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=100)
+    parser.add_argument("--eval_periods", type=int, default=10)
+    
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
 

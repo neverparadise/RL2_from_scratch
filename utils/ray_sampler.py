@@ -8,6 +8,7 @@ import psutil
 import yaml
 from typing import Any, Dict, List
 import os
+import math
 
 pardir = os.pardir
 cwd = os.getcwd()
@@ -19,10 +20,11 @@ num_cpus = psutil.cpu_count()
 num_gpus = torch.cuda.device_count()
 meta_batch_size = config["meta_batch_size"]
 num_test_tasks = config["num_test_tasks"]
-worker_per_cpus = int(num_cpus / (meta_batch_size + num_test_tasks))
+worker_per_cpus = int(num_cpus / (meta_batch_size + num_test_tasks)) -1
 worker_per_gpus = float(num_gpus / (meta_batch_size+ num_test_tasks))
 
 print(psutil.cpu_count())
+print(num_gpus)
 print(worker_per_cpus)
 print(worker_per_gpus)
 import logging
