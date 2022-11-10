@@ -5,7 +5,7 @@ from distutils.util import strtobool
 import argparse
 import yaml
 import datetime
-# import ray
+import ray
 
 import gym
 from gym.envs.registration import register
@@ -127,6 +127,7 @@ def train():
 
 if __name__ == "__main__":
     # argparser, configs, logger
+    ray.init(num_cpus=96, num_gpus=8)
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
@@ -175,4 +176,4 @@ if __name__ == "__main__":
                     )
 
     meta_learner.meta_train_parallel()
-
+    ray.shutdown()
