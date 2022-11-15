@@ -74,7 +74,7 @@ def parse_args():
             # help="the id of the environment")
     parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
     # parser.add_argument("--env_name", type=str, default="Ant")
-    parser.add_argument("--total-timesteps", type=int, default=5000000,
+    parser.add_argument("--total-timesteps", type=int, default=10000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=1000)
@@ -247,8 +247,10 @@ if __name__ == "__main__":
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
-
     for update in range(1, num_updates + 1):
+        if global_step % 80000 == 0:
+            save_path = os.getcwd()+f'/weights/cleanrl/ppo{update}.pt'
+            torch.save(agent.state_dict(), save_path)
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
