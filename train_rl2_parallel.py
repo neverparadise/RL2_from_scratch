@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="if toggled, cuda will be enabled by default")
     parser.add_argument('--device', default='cuda')
-    parser.add_argument("--seed", type=int, default=1,
+    parser.add_argument("--seed", type=int, default=55,
                         help="seed of the experiment")
     parser.add_argument("--render", type=bool, default=True)
     parser.add_argument("--render_mode", type=str, default=None)

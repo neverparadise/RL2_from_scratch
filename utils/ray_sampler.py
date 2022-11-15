@@ -38,7 +38,7 @@ formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-@ray.remote(num_cpus=4, num_gpus=worker_per_gpus)
+@ray.remote(num_cpus=worker_per_cpus, num_gpus=worker_per_gpus)
 class RaySampler:
     # trial (MDP)을 parallel processing
     def __init__(self, env, agent, args, config, worker_idx):

@@ -107,10 +107,9 @@ class MetaLearner:
         total_start_time = time.time()
         for iteration in range(self.num_iterations):
             start_time = time.time()
+            results = {}
 
-            # TODO ==========================
             # ? applying parallel processing
-            # ! env 받아오는 부분에서 에러남
             print(f"=============== Iteration {iteration} ===============")
             traj_refs = []
             for sampler in self.train_samplers:
@@ -118,15 +117,28 @@ class MetaLearner:
                 ref = sampler.obtain_samples.remote(task_idx)
                 traj_refs.append(ref)
             workers_trajs = ray.get(traj_refs) # [[traj1, traj2], [traj1, traj2, ...]]
+            
+            train_return = np.array([])
             for trajs in workers_trajs:
                 self.buffer.add_trajs(trajs)
+                for traj in trajs:
+                    return_ =  np.array([np.sum(traj["rewards"])])
+                    train_return = np.concatenate([return_, train_return])
+            mean_train_return = train_return.mean().item()
+            results["mean_train_return"] = mean_train_return
+            
             print(f"buffer_size: {self.buffer.size}")
-            # TODO ==========================
             
             batch = self.buffer.sample_batch()
 
             print(f"Start the meta-gradient update of iteration {iteration}")
             log_values = self.agent.train_model(self.batch_size, batch)
+            
+            results["total_loss"] = log_values["total_loss"]
+            results["policy_loss"] = log_values["policy_loss"]
+            results["value_loss"] = log_values["value_loss"]
+            results["total_time"] = time.time() - total_start_time
+            results["time_per_iter"] = time.time() - start_time
             
             if iteration % self.save_periods == 0:
                 if not os.path.exists(self.save_file_path):
@@ -152,42 +164,36 @@ class MetaLearner:
                     },
                     ckpt_path,
                 )
-            
-            if iteration % self.eval_periods == 0:
-                # * Meta-test procedure
-                test_results = {}
-                test_return = np.array([])
-                print(f"Start the meta-test evaluation {iteration}")
-                test_traj_refs = []
-                for sampler in self.test_samplers:
-                    task_idx = np.random.randint(len(self.test_tasks), size=1).item()
-                    #self.agent.policy.is_deterministic = True
-                    ref = sampler.obtain_samples.remote(task_idx)
-                    print(ref)
-                    test_traj_refs.append(ref)
-                test_workers_trajs = ray.get(test_traj_refs) 
-                print(f"Start the return calculation {iteration}")
-                for trajs in test_workers_trajs:
-                    for traj in trajs:
-                        return_ =  np.array([np.sum(traj["rewards"])])
-                        test_return = np.concatenate([return_, test_return])
-                test_return = test_return.mean().item()
-                test_results["return"] = test_return / len(self.test_tasks)
-                test_results["total_loss"] = log_values["total_loss"]
-                test_results["policy_loss"] = log_values["policy_loss"]
-                test_results["value_loss"] = log_values["value_loss"]
-                test_results["total_time"] = time.time() - total_start_time
-                test_results["time_per_iter"] = time.time() - start_time
 
-                self.log_on_tensorboard(test_results, iteration)
+
+            # * Meta-test procedure
+            test_return = np.array([])
+            print(f"Start the meta-test evaluation {iteration}")
+            test_traj_refs = []
+            for sampler in self.test_samplers:
+                task_idx = np.random.randint(len(self.test_tasks), size=1).item()
+                #self.agent.policy.is_deterministic = True
+                ref = sampler.obtain_samples.remote(task_idx)
+                print(ref)
+                test_traj_refs.append(ref)
+            test_workers_trajs = ray.get(test_traj_refs) 
+            print(f"Start the return calculation {iteration}")
+            for trajs in test_workers_trajs:
+                for traj in trajs:
+                    return_ =  np.array([np.sum(traj["rewards"])])
+                    test_return = np.concatenate([return_, test_return])
+            mean_test_return = test_return.mean().item()
+            results["mean_test_return"] = mean_test_return
+            self.log_on_tensorboard(results, iteration)
             
-    def log_on_tensorboard(self, test_results: Dict[str, Any], iteration: int) -> None:
-        self.tb_logger.add("test/return", test_results["return"], iteration)
-        self.tb_logger.add("train/total_loss", test_results["total_loss"], iteration)
-        self.tb_logger.add("train/policy_loss", test_results["policy_loss"], iteration)
-        self.tb_logger.add("train/value_loss", test_results["value_loss"], iteration)
-        self.tb_logger.add("time/total_time", test_results["total_time"], iteration)
-        self.tb_logger.add("time/time_per_iter", test_results["time_per_iter"], iteration)
+    def log_on_tensorboard(self, results: Dict[str, Any], iteration: int) -> None:
+        self.tb_logger.add("test/return", results["mean_test_return"], iteration)
+        self.tb_logger.add("train/return", results["mean_train_return"], iteration)
+        self.tb_logger.add("train/total_loss", results["total_loss"], iteration)
+        self.tb_logger.add("train/policy_loss", results["policy_loss"], iteration)
+        self.tb_logger.add("train/value_loss", results["value_loss"], iteration)
+        self.tb_logger.add("time/total_time", results["total_time"], iteration)
+        self.tb_logger.add("time/time_per_iter", results["time_per_iter"], iteration)
 
     def meta_test_parallel(
         self,
@@ -196,7 +202,7 @@ class MetaLearner:
         start_time: float,
         log_values: Dict[str, float],
     ) -> None:
-        test_results = {}
+        results = {}
         test_return = np.array([])
         
         print(f"Start the meta-test evaluation {iteration}")
@@ -222,11 +228,11 @@ class MetaLearner:
         test_return = test_return.mean().item()
 
 
-        test_results["return"] = test_return / len(self.test_tasks)
-        test_results["total_loss"] = log_values["total_loss"]
-        test_results["policy_loss"] = log_values["policy_loss"]
-        test_results["value_loss"] = log_values["value_loss"]
-        test_results["total_time"] = time.time() - total_start_time
-        test_results["time_per_iter"] = time.time() - start_time
+        results["return"] = test_return / len(self.test_tasks)
+        results["total_loss"] = log_values["total_loss"]
+        results["policy_loss"] = log_values["policy_loss"]
+        results["value_loss"] = log_values["value_loss"]
+        results["total_time"] = time.time() - total_start_time
+        results["time_per_iter"] = time.time() - start_time
 
-        self.log_on_tensorboard(test_results, iteration)
+        self.log_on_tensorboard(results, iteration)
