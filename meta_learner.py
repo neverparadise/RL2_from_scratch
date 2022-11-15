@@ -52,16 +52,11 @@ class MetaLearner:
         self.meta_batch_size: int = configs["meta_batch_size"]
         self.batch_size: int = self.meta_batch_size * self.num_samples
 
-        if args.parallel_processing:
-            self.samplers = [RaySampler.remote(self.env, self.agent, args, configs, idx) for idx in range(self.meta_batch_size)]
-        else:
-            self.sampler = RL2Sampler(
-                env=env,
-                agent=agent,
-                args=args,
-                configs=configs
-            )
-
+        self.sampler = RL2Sampler(
+            env=env,
+            agent=agent,
+            args=args,
+            configs=configs)
         self.buffer = RolloutBuffer(
             args=args, configs=configs
         )
