@@ -1,9 +1,9 @@
 # algorithm config
 lr: 0.0005
 mini_batch_size: 32
-meta_batch_size: 6
+meta_batch_size: 4
 num_tasks: 4
-num_train_tasks: 8
+num_train_tasks: 2
 num_test_tasks: 2
 n_epochs: 4000
 k_epochs: 5 # optimization epoch
