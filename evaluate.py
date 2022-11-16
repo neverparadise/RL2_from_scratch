@@ -128,7 +128,7 @@ if __name__ == "__main__":
     agent = PPO(args, configs)
 
     #ckpt_path = f"{args.weight_path}" + '/' +f"{args.env_name}_RL2_{args.seed}" + f"/checkpoint_" + f"{str(args.load_ckpt_num)}.pt"
-    ckpt_path = os.getcwd() + '/weigts/checkpoint_100.pt'
+    ckpt_path = os.getcwd() + '/weights/checkpoint_100.pt'
     print(ckpt_path)
     agent.load(ckpt_path)
     # buffer, sampler
