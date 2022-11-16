@@ -36,7 +36,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # ? Experiments information
-    parser.add_argument('--exp_name', type=str, default="RL2",
+    parser.add_argument('--exp_name', type=str, default="RL2Single",
                         help="the name of this experiment")
     parser.add_argument("--meta_learning", type=bool, default=True)
     parser.add_argument("--load", type=bool, default=False)
