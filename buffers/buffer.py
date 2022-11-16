@@ -226,7 +226,9 @@ class RolloutBuffer:
         samples.update({"pi_hiddens":self.pi_hiddens,
                         "v_hiddens": self.v_hiddens
                         })
-        samples = {k: shuffle(to_tensor(v, device="cpu"), device="cpu") for k, v in samples.items()}
+        #samples = {k: shuffle(to_tensor(v, device="cpu"), device="cpu") for k, v in samples.items()}
+        samples = {k: to_tensor(v, device="cpu") for k, v in samples.items()}
+        
         return RecurrentRolloutBufferSamples(*tuple(samples.values()))
     
     def sample_mini_batch(self, batch_size):
