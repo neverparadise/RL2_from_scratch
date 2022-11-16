@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from distutils.util import strtobool
 import argparse
 import yaml
-
+import datetime
 import gym
 from gym.envs.registration import register
 from gym.spaces import Box, Discrete
@@ -106,6 +106,7 @@ if __name__ == "__main__":
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
     args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
+    args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
     tb_logger = TBLogger(args, configs)
 
     # env, seed
@@ -126,7 +127,8 @@ if __name__ == "__main__":
     # agent
     agent = PPO(args, configs)
 
-    ckpt_path = f"{args.weight_path}" + '/' +f"{args.env_name}_RL2_{args.seed}" + f"/checkpoint_" + f"{str(args.load_ckpt_num)}.pt"
+    #ckpt_path = f"{args.weight_path}" + '/' +f"{args.env_name}_RL2_{args.seed}" + f"/checkpoint_" + f"{str(args.load_ckpt_num)}.pt"
+    ckpt_path = os.getcwd() + '/weigts/checkpoint_100.pt'
     print(ckpt_path)
     agent.load(ckpt_path)
     # buffer, sampler
