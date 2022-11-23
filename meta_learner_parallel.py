@@ -47,12 +47,12 @@ class MetaLearner:
         self.save_periods = args.save_periods
         self.weight_path = args.weight_path
         self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
-        self.max_step: int = args.max_episode_steps
+        self.max_steps: int = args.max_episode_steps
         self.num_samples: int = args.rollout_steps
         self.num_test_tasks = configs["num_test_tasks"]
         self.num_iterations: int = configs["n_epochs"]
         self.meta_batch_size: int = configs["meta_batch_size"]
-        self.batch_size: int = self.meta_batch_size * self.num_samples
+        self.batch_size: int = args.batch_size
         self.eval_periods = args.eval_periods
         
         if args.parallel_processing:

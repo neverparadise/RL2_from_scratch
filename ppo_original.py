@@ -25,12 +25,10 @@ class PPO:
         self.num_epochs = configs["k_epochs"]
         self.mini_batch_size = configs["mini_batch_size"]
         self.clip_param = configs["lr_clip_range"]
-        self.ent_coef = float(configs["ent_coef"])
-        self.vf_coef = float(configs["vf_coef"])
+        self.ent_coef = configs["ent_coef"]
+        self.vf_coef = configs["vf_coef"]
         self.is_continuous = configs["is_continuous"]
         self.is_deterministic = configs["is_deterministic"]
-        self.norm_adv = configs["normalize_advantages"]
-        self.max_grad_norm = configs["max_grad_norm"]
 
         # Networks
         if self.meta_learning:
@@ -65,6 +63,7 @@ class PPO:
             else: # stochastic
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
+                log_prob = log_prob.sum(-1)
             while len(action.shape) != 1:
                 action = action.squeeze(0)
                 log_prob = log_prob.squeeze(0)
@@ -96,75 +95,89 @@ class PPO:
         pi_hiddens = batch["pi_hiddens"]
         v_hiddens = batch["v_hiddens"]
 
+        obs_batches = torch.chunk(observations, num_mini_batch) # 512 / 128 =4
+        action_batches = torch.chunk(actions, num_mini_batch)
+        reward_batches = torch.chunk(rewards, num_mini_batch)
+        done_batches = torch.chunk(dones, num_mini_batch)
+        return_batches = torch.chunk(returns, num_mini_batch)
+        log_prob_batches = torch.chunk(old_log_probs, num_mini_batch)
+        advant_batches = torch.chunk(advants, num_mini_batch)
+        pi_hidden_batches = torch.chunk(pi_hiddens, num_mini_batch)
+        v_hidden_batches = torch.chunk(v_hiddens, num_mini_batch)
+
         sum_total_loss: float = 0
         sum_policy_loss: float = 0
         sum_value_loss: float = 0
-        
-        b_indices = np.arange(batch_size)
-        for epoch in range(self.num_epochs):
+
+        for _ in range(self.num_epochs):
+            
             sum_total_loss_mini_batch = 0
             sum_policy_loss_mini_batch = 0
             sum_value_loss_mini_batch = 0
-            #np.random.shuffle(b_indices)
-            for start in range(0, batch_size, self.mini_batch_size):
-                end = start + self.mini_batch_size
-                mb_indices = b_indices[start:end]
+            for (
+                obs_batch,
+                action_batch,
+                rew_batch, 
+                done_batch,
+                pi_hidden_batch,
+                v_hidden_batch,
+                return_batch,
+                advant_batch,
+                log_prob_batch,
+            ) in zip(
+                obs_batches,
+                action_batches,
+                reward_batches,
+                done_batches,
+                pi_hidden_batches,
+                v_hidden_batches,
+                return_batches,
+                advant_batches,
+                log_prob_batches,
+            ):
+                trans_batch = (obs_batch.to(self.device), action_batch.to(self.device),\
+                    rew_batch.to(self.device), done_batch.to(self.device))
                 
-                # * mini batches
-                mb_obs = observations[mb_indices].to(self.device)
-                mb_acts = actions[mb_indices].to(self.device)
-                mb_rews = rewards[mb_indices].to(self.device)
-                mb_dones = dones[mb_indices].to(self.device)
-                mb_returns = returns[mb_indices].to(self.device)
-                mb_old_log_probs = old_log_probs[mb_indices].to(self.device)
-                mb_advants = advants[mb_indices].to(self.device)
-                mb_pi_hiddens = pi_hiddens[mb_indices].to(self.device)
-                mb_v_hiddens = v_hiddens[mb_indices].to(self.device)
-                
-                mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
-                
-                if self.norm_adv:
-                    mb_advants = (mb_advants - mb_advants.mean()) / (mb_advants.std() + 1e-8)
-                _, mb_new_log_probs, mb_entropy, _ = self.get_action(
-                    mb_trans,
-                    mb_pi_hiddens,
-                    mb_acts,
+                # Policy Loss
+                _, new_log_prob_batch, entropy, _ = self.get_action(
+                    trans_batch,
+                    pi_hidden_batch.to(self.device),
+                    action_batch.to(self.device),
                     is_training=True
                 )
-                
-                logratio = mb_new_log_probs - mb_old_log_probs
-                ratio = logratio.exp()
-                
-                # Policy loss
-                pg_loss1 = -mb_advants * ratio
-                pg_loss2 = -mb_advants * torch.clamp(ratio, 1 - self.clip_param, 1 + self.clip_param)
-                policy_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # Value loss
-                mb_values, _ = self.vf(mb_trans, mb_v_hiddens, is_training=True)
-                value_loss = F.mse_loss(mb_values, mb_returns)
-                #value_loss = 0.5 * ((mb_values - mb_returns) ** 2).mean()
+                ratio = torch.exp(new_log_prob_batch - log_prob_batch.to(self.device))
+
+                policy_loss = ratio * advant_batch.to(self.device)
+                clipped_loss = (
+                    torch.clamp(ratio, 1 - self.clip_param, 1 + self.clip_param) * advant_batch.to(self.device)
+                )
+
+                entropy_loss = entropy.mean()
                 
-                entropy_loss = mb_entropy.mean()
-                total_loss = policy_loss - self.ent_coef * entropy_loss + self.vf_coef * value_loss 
+                policy_loss = -torch.min(policy_loss, clipped_loss).mean()
+
+                # Value Loss  
+                value_batch, _ = self.vf(trans_batch, v_hidden_batch.to(self.device), is_training=True)
+                value_loss = F.mse_loss(value_batch.view(-1, 1), return_batch.to(self.device))
+
+
+                # Backward()
+                total_loss = policy_loss + self.vf_coef * value_loss + self.ent_coef * entropy_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
-                nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-                nn.utils.clip_grad_norm_(self.vf.parameters(), self.max_grad_norm)
+                nn.utils.clip_grad_norm_(self.policy.parameters(), 5)
+                nn.utils.clip_grad_norm_(self.vf.parameters(), 5)
                 self.optimizer.step()
-                
+
                 sum_total_loss_mini_batch += total_loss
                 sum_policy_loss_mini_batch += policy_loss
                 sum_value_loss_mini_batch += value_loss
-                
+
             sum_total_loss += sum_total_loss_mini_batch / num_mini_batch
             sum_policy_loss += sum_policy_loss_mini_batch / num_mini_batch
             sum_value_loss += sum_value_loss_mini_batch / num_mini_batch
-                
-            sum_total_loss_mini_batch = 0
-            sum_policy_loss_mini_batch = 0
-            sum_value_loss_mini_batch = 0
-        
+
         mean_total_loss = sum_total_loss / self.num_epochs
         mean_policy_loss = sum_policy_loss / self.num_epochs
         mean_value_loss = sum_value_loss / self.num_epochs

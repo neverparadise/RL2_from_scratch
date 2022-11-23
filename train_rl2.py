@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="if toggled, cuda will be enabled by default")
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument("--seed", type=int, default=1,
+    parser.add_argument("--seed", type=int, default=3456,
                         help="seed of the experiment")
     parser.add_argument("--render", type=bool, default=False)
     parser.add_argument("--render_mode", type=str, default=None)
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
-    args.batch_size = int(configs["meta_batch_size"] * args.rollout_steps)
+    args.batch_size = int(configs["meta_batch_size"] * args.max_episode_steps)
     args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
 
     tb_logger = TBLogger(args, configs)

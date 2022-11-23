@@ -195,12 +195,12 @@ class MetaLearner:
         test_return: float = 0
         for index in self.test_tasks:
             self.env.reset_task(index)
-            self.agent.policy.is_deterministic = True
+            self.agent.policy.is_deterministic = False
             trajs: List[Dict[str, np.ndarray]] = self.sampler.obtain_samples()
             #test_return += np.array([np.sum(trajs[i]["rewards"])] for i in range(len(trajs))).mean().item()
             test_return += np.array([np.sum(trajs[i]["rewards"]) for i in range(len(trajs))]).mean().item()
 
-
+        print(f"mean test_return: {test_return / len(self.test_tasks)}")
         test_results["return"] = test_return / len(self.test_tasks)
         test_results["total_loss"] = log_values["total_loss"]
         test_results["policy_loss"] = log_values["policy_loss"]

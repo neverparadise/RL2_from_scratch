@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="if toggled, cuda will be enabled by default")
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument("--seed", type=int, default=1,
+    parser.add_argument("--seed", type=int, default=512,
                         help="seed of the experiment")
     parser.add_argument("--render", type=bool, default=False)
     parser.add_argument("--render_mode", type=str, default="human")
@@ -74,11 +74,11 @@ def parse_args():
     #       help="the id of the environment")
     parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
     # parser.add_argument("--env_name", type=str, default="Ant")
-    parser.add_argument("--total-timesteps", type=int, default=1000000,
+    parser.add_argument("--total-timesteps", type=int, default=100000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=1000)
-    parser.add_argument("--num-envs", type=int, default=4,
+    parser.add_argument("--num-envs", type=int, default=16,
                         help="the number of parallel game environments")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="Toggle learning rate annealing for policy and value networks")

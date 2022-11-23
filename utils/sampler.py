@@ -42,7 +42,7 @@ class BaseSampler:
         trajs = []
         # ! 이 부분 ray로 병렬처리 가능할듯?
         while not self.cur_samples == self.max_samples:
-            traj = self.rollout(self.max_samples)
+            traj = self.rollout(self.max_step)
             trajs.append(traj)
 
         self.cur_samples = 0
@@ -95,6 +95,7 @@ class BaseSampler:
             obs = next_obs.reshape(-1)
             cur_step += 1
             self.cur_samples += 1
+            
             if self.render and (self.render_mode is not None):
                print(1)
                print(f"env: {self.env_name}, is_render: {self.render}")
@@ -130,28 +131,28 @@ class RL2Sampler(BaseSampler):
         self.num_tasks = configs["num_tasks"]
 
     def obtain_samples(self) -> List[Dict[str, np.ndarray]]:
+        self.cur_samples = 0
         self.pi_hidden = np.zeros((self.num_rnn_layers, 1, self.hidden_dim))
         self.v_hidden = np.zeros((self.num_rnn_layers, 1, self.hidden_dim))
 
         trajs = []
         # ! 이 부분 ray로 병렬처리 가능할듯?
         while not self.cur_samples == self.max_samples:
-            traj = self.rollout(self.max_samples)
+            traj = self.rollout(self.max_step)
             trajs.append(traj)
 
-        self.cur_samples = 0
         return trajs
 
-    def rollout(self, max_samples: int) -> Dict[str, np.ndarray]:
-        observations = np.zeros((max_samples, self.state_dim), dtype=np.float32)
-        actions = np.zeros((max_samples, self.action_dim), dtype=np.float32)
-        rewards = np.zeros((max_samples,), dtype=np.float32)
-        dones = np.zeros((max_samples,), dtype=np.int)
-        pi_hiddens = np.zeros((max_samples, self.num_rnn_layers, self.hidden_dim))
-        v_hiddens = np.zeros((max_samples, self.num_rnn_layers, self.hidden_dim))
-        values = np.zeros((max_samples,), dtype=np.float32)
-        log_probs = np.zeros((max_samples,), dtype=np.float32)
-        infos = np.zeros((max_samples, ))
+    def rollout(self, max_step) -> Dict[str, np.ndarray]:
+        observations = np.zeros((max_step, self.state_dim), dtype=np.float32)
+        actions = np.zeros((max_step, self.action_dim), dtype=np.float32)
+        rewards = np.zeros((max_step,), dtype=np.float32)
+        dones = np.zeros((max_step,), dtype=np.int)
+        pi_hiddens = np.zeros((max_step, self.num_rnn_layers, self.hidden_dim))
+        v_hiddens = np.zeros((max_step, self.num_rnn_layers, self.hidden_dim))
+        values = np.zeros((max_step,), dtype=np.float32)
+        log_probs = np.zeros((max_step,), dtype=np.float32)
+        infos = np.zeros((max_step, ))
 
         cur_step = 0
         self.env.seed(seed=self.seed)
@@ -162,7 +163,7 @@ class RL2Sampler(BaseSampler):
         reward = np.zeros(1)
         done = np.zeros(1)
 
-        while not (done or cur_step == self.max_step or self.cur_samples == max_samples):
+        while not (done or cur_step == self.max_step):
             if self.render and (self.render_mode is not None):
                self.env.render(mode=self.render_mode)
             elif self.render and (self.render_mode is None):
