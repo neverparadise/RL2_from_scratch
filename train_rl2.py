@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=100)
+    # ? training 시 바꿔줄 것 (False)
+    parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
 
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     args = parse_args()
     with open(args.config_path) as file:
         configs: Dict[str, Any] = yaml.load(file, Loader=yaml.FullLoader)
-    args.batch_size = int(configs["meta_batch_size"] * args.max_episode_steps)
+    args.batch_size = int(configs["meta_batch_size"] * args.max_episode_steps * args.num_episodes_per_trial)
     args.now = datetime.datetime.now().strftime('_%m.%d_%H:%M:%S')
 
     tb_logger = TBLogger(args, configs)

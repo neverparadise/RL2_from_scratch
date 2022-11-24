@@ -2,7 +2,7 @@
 lr: 0.0001
 mini_batch_size: 32
 meta_batch_size: 4
-num_tasks: 4
+num_tasks: 2
 num_train_tasks: 2
 num_test_tasks: 2
 n_epochs: 4000
@@ -15,9 +15,9 @@ lr_clip_range: 0.2
 ent_coef: 0.0001
 vf_coef: 0.2
 max_grad_norm: 5
-normalize_inputs: True
-normalize_outputs: True
-normalize_advantages: True
+norm_inputs: True
+norm_outputs: True
+norm_adv: True
 min_std: 0.5 # e^-20
 max_std: 1.5 # e^2
 

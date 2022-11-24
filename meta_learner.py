@@ -48,10 +48,10 @@ class MetaLearner:
         self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
         self.max_step: int = args.max_episode_steps
         self.num_samples: int = args.rollout_steps
+        self.debug = args.debug
         self.num_iterations: int = configs["n_epochs"]
         self.meta_batch_size: int = configs["meta_batch_size"]
         self.batch_size: int = self.meta_batch_size * self.num_samples
-
         self.sampler = RL2Sampler(
             env=env,
             agent=agent,
@@ -84,72 +84,42 @@ class MetaLearner:
         self.num_stop_conditions: int = configs["num_stop_conditions"]
         self.stop_goal: int = configs["stop_goal"]
         self.is_early_stopping = False
-
-    def meta_train_parallel(self) -> None:
-        total_start_time = time.time()
-        for iteration in range(self.num_iterations):
-            start_time = time.time()
-
-            # TODO ==========================
-            # ? applying parallel processing
-            print(f"=============== Iteration {iteration} ===============")
-            pr = [sampler.print_worker_infos.remote() for sampler in self.samplers]
-            ray.get(pr)
-            traj_refs = [sampler.obtain_samples.remote(np.random.randint(len(self.train_tasks), size=1)) for sampler in self.samplers]
-            trajs = ray.get(traj_refs)
-            self.buffer.add_trajs(trajs)
-            # TODO ==========================
-            
-            batch = self.buffer.sample_batch()
-
-            print(f"Start the meta-gradient update of iteration {iteration}")
-            log_values = self.agent.train_model(self.batch_size, batch)
-            if iteration % self.save_periods == 0:
-                if not os.path.exists(self.save_file_path):
-                    self.save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',self.save_file_path))
-                    try:
-                        os.mkdir(self.save_file_path)
-                    except:
-                        dir_path_head, dir_path_tail = os.path.split(self.save_file_path)
-                        if len(dir_path_tail) == 0:
-                            dir_path_head, dir_path_tail = os.path.split(dir_path_head)
-                        try:
-                            os.mkdir(dir_path_head)
-                            os.mkdir(self.save_file_path)
-                        except:
-                            pass
-                ckpt_path = os.path.join(self.save_file_path,"checkpoint_" + str(iteration) + ".pt")
-                print(self.save_file_path)
-                torch.save(
-                    {
-                        "policy": self.agent.policy.state_dict(),
-                        "vf": self.agent.vf.state_dict(),
-                        "buffer": self.buffer,
-                    },
-                    ckpt_path,
-                )
-            self.meta_test(iteration, total_start_time, start_time, log_values)
+        
 
     def meta_train(self) -> None:
         total_start_time = time.time()
         for iteration in range(self.num_iterations):
             start_time = time.time()
+            results = {}
 
             print(f"=============== Iteration {iteration} ===============")
             indices = np.random.randint(len(self.train_tasks), size=self.meta_batch_size)
             
             print(f"Task indices {indices}")
+            train_return = np.array([])
             for i, index in enumerate(indices):
+                if self.debug:
+                    index = 0
                 self.env.reset_task(index)
                 self.agent.policy.is_deterministic = False
                 print(f"[{i + 1}/{self.meta_batch_size}] collecting samples, current task: {self.env.get_task()}")
                 trajs: List[Dict[str, np.ndarray]] = self.sampler.obtain_samples()
                 self.buffer.add_trajs(trajs)
+                for traj in trajs:
+                    return_ =  np.array([np.sum(traj["rewards"])])
+                    train_return = np.concatenate([train_return, return_])
+            mean_train_return = train_return
+            results["train_return"] = mean_train_return
 
             batch = self.buffer.sample_batch()
 
+
+            
             print(f"Start the meta-gradient update of iteration {iteration}")
             log_values = self.agent.train_model(self.batch_size, batch)
+            results["total_loss"] = log_values["total_loss"]
+            results["policy_loss"] = log_values["policy_loss"]
+            results["value_loss"] = log_values["value_loss"]
             if iteration % self.save_periods == 0:
                 if not os.path.exists(self.save_file_path):
                     self.save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',self.save_file_path))
@@ -174,10 +144,11 @@ class MetaLearner:
                     },
                     ckpt_path,
                 )
-            self.meta_test(iteration, total_start_time, start_time, log_values)
+            self.meta_test(iteration, total_start_time, start_time, results)
     
     def log_on_tensorboard(self, test_results: Dict[str, Any], iteration: int) -> None:
-        self.tb_logger.add("test/return", test_results["return"], iteration)
+        self.tb_logger.add("test/return", test_results["mean_test_return"], iteration)
+        self.tb_logger.add("train/return", test_results["mean_train_return"], iteration)
         self.tb_logger.add("train/total_loss", test_results["total_loss"], iteration)
         self.tb_logger.add("train/policy_loss", test_results["policy_loss"], iteration)
         self.tb_logger.add("train/value_loss", test_results["value_loss"], iteration)
@@ -194,6 +165,8 @@ class MetaLearner:
         test_results = {}
         test_return: float = 0
         for index in self.test_tasks:
+            if self.debug:
+                index = 0
             self.env.reset_task(index)
             self.agent.policy.is_deterministic = False
             trajs: List[Dict[str, np.ndarray]] = self.sampler.obtain_samples()
@@ -201,7 +174,8 @@ class MetaLearner:
             test_return += np.array([np.sum(trajs[i]["rewards"]) for i in range(len(trajs))]).mean().item()
 
         print(f"mean test_return: {test_return / len(self.test_tasks)}")
-        test_results["return"] = test_return / len(self.test_tasks)
+        test_results["mean_train_return"] = log_values["train_return"] / len(self.train_tasks)
+        test_results["mean_test_return"] = test_return / len(self.test_tasks)
         test_results["total_loss"] = log_values["total_loss"]
         test_results["policy_loss"] = log_values["policy_loss"]
         test_results["value_loss"] = log_values["value_loss"]

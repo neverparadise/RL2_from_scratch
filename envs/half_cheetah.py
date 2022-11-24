@@ -1,5 +1,5 @@
 from typing import List, Union, Any, Dict, List, Tuple
-
+import random
 import numpy as np
 from gym import utils
 from gym.envs.mujoco import HalfCheetahEnv as HalfCheetahEnv_
@@ -42,11 +42,17 @@ class HalfCheetahEnv(HalfCheetahEnv_):
 
 
 class HalfCheetahDirEnv(HalfCheetahEnv):
-    def __init__(self, num_tasks=4) -> None:
-        directions = [-1, 1, -1, 1]
+    def __init__(self, num_tasks=2) -> None:
+        if num_tasks==1:
+            directions = [1]
+        elif num_tasks==2: 
+            directions = [-1, 1]
+        else:
+            raise "num tasks > 2"
+            
         self.tasks = [{"direction": direction} for direction in directions]
-        assert num_tasks == len(self.tasks)
-        self._task = self.tasks[0]
+        #assert num_tasks == len(self.tasks)
+        self._task =  self.tasks[0]
         self._goal_dir = self._task["direction"]
         super().__init__()
 
@@ -70,7 +76,7 @@ class HalfCheetahDirEnv(HalfCheetahEnv):
 
     def reset_task(self, idx: int) -> None:
         self._task = self.tasks[idx]
-        self._goal_dir = self._task["direction"]
+        self.set_task(self._task["direction"])
         self.reset()
 
     def set_task(self, task):

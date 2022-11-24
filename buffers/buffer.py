@@ -85,12 +85,12 @@ class RolloutBuffer:
         """
         self.observations = np.zeros((self.buffer_size, self.state_dim), dtype=np.float32)
         self.actions = np.zeros((self.buffer_size, self.action_dim), dtype=np.float32)
-        self.values = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.rewards = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.log_probs = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.dones = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.advantages = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.returns = np.zeros((self.buffer_size,), dtype=np.float32)
+        self.values = np.zeros((self.buffer_size,1), dtype=np.float32)
+        self.rewards = np.zeros((self.buffer_size,1), dtype=np.float32)
+        self.log_probs = np.zeros((self.buffer_size,1), dtype=np.float32)
+        self.dones = np.zeros((self.buffer_size,1), dtype=np.float32)
+        self.advantages = np.zeros((self.buffer_size,1), dtype=np.float32)
+        self.returns = np.zeros((self.buffer_size,1), dtype=np.float32)
         self.real_size = 0
         if self.is_recurrent:
             self.pi_hiddens = np.zeros((self.buffer_size, self.num_rnn_layers, self.hidden_dim), dtype=np.float32)
@@ -207,7 +207,8 @@ class RolloutBuffer:
             )
             self.advantages[t] = running_advant
             prev_value = self.values[t]
-        self.advantages = (self.advantages - self.advantages.mean()) / self.advantages.std()
+        
+        # self.advantages = (self.advantages - self.advantages.mean()) / self.advantages.std()
         
     def sample_batch(self) -> RecurrentRolloutBufferSamples:
         assert self.pt == self.buffer_size

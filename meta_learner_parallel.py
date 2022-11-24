@@ -49,6 +49,7 @@ class MetaLearner:
         self.save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
         self.max_steps: int = args.max_episode_steps
         self.num_samples: int = args.rollout_steps
+        self.debug = args.debug
         self.num_test_tasks = configs["num_test_tasks"]
         self.num_iterations: int = configs["n_epochs"]
         self.meta_batch_size: int = configs["meta_batch_size"]
@@ -113,7 +114,10 @@ class MetaLearner:
             print(f"=============== Iteration {iteration} ===============")
             traj_refs = []
             for sampler in self.train_samplers:
-                task_idx = np.random.randint(len(self.train_tasks), size=1).item()
+                #task_idx = np.random.randint(len(self.train_tasks), size=1).item()
+                #task_idx = np.array([1 for i in len(self.train_tasks)])
+                if self.debug:
+                    task_idx = 1
                 ref = sampler.obtain_samples.remote(task_idx)
                 traj_refs.append(ref)
             workers_trajs = ray.get(traj_refs) # [[traj1, traj2], [traj1, traj2, ...]]
@@ -171,7 +175,9 @@ class MetaLearner:
             print(f"Start the meta-test evaluation {iteration}")
             test_traj_refs = []
             for sampler in self.test_samplers:
-                task_idx = np.random.randint(len(self.test_tasks), size=1).item()
+                #task_idx = np.random.randint(len(self.test_tasks), size=1).item()
+                if self.debug:
+                    task_idx = 1
                 #self.agent.policy.is_deterministic = True
                 ref = sampler.obtain_samples.remote(task_idx)
                 print(ref)
