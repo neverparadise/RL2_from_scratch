@@ -1,5 +1,5 @@
 # algorithm config
-lr: 0.0001
+lr: 0.000005
 mini_batch_size: 32
 meta_batch_size: 4
 num_tasks: 2
@@ -12,8 +12,8 @@ stop_goal: 180
 gamma: 0.99
 gae_lambda: 0.95
 lr_clip_range: 0.2
-ent_coef: 0.0001
-vf_coef: 0.2
+ent_coef: 0.01
+vf_coef: 1.0
 clip_vloss: True
 max_grad_norm: 5
 norm_inputs: True
