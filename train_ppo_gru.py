@@ -54,7 +54,7 @@ def parse_args():
     parser.add_argument("--render_mode", type=str, default="human")
     parser.add_argument("--weight_path", type=str, default="./weights",
                         help="weight path for saving model")
-    parser.add_argument("--save_periods", type=int, default=20)
+    parser.add_argument("--save_periods", type=int, default=100)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
     parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
@@ -78,7 +78,7 @@ def parse_args():
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=1000)
-    parser.add_argument("--num-envs", type=int, default=16,
+    parser.add_argument("--num-envs", type=int, default=4,
                         help="the number of parallel game environments")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
                         help="Toggle learning rate annealing for policy and value networks")

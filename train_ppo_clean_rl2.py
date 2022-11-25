@@ -56,8 +56,8 @@ def parse_args():
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
-    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=True)
     
     parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
@@ -186,7 +186,8 @@ class Agent(nn.Module):
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
             mu = torch.tanh(self.mean(x))
-            std = torch.exp(self.actor_logstd)
+            action_logstd = self.actor_logstd.expand_as(mu)
+            std = torch.exp(action_logstd)
             # std = F.softplus(self.std(x))
             dist = Normal(mu, std)
         else:
@@ -197,7 +198,7 @@ class Agent(nn.Module):
 
     def get_value(self, x, hidden, is_training=False):
         x, dist, new_hidden = self.forward(x, hidden, is_training=is_training)
-        return self.critic(x).detach.cpu().numpy()
+        return self.critic(x).detach().cpu().numpy()
     
     def get_action_and_value(self, transition ,hidden, action=None, is_training=False):
         x, dist, new_hidden = self.forward(transition, hidden, is_training=is_training)
@@ -222,8 +223,7 @@ class Agent(nn.Module):
             if self.is_continuous:
                 action = action.detach()
             else:
-                # ! 벡터환경이라 item 없애야할듯
-                action = action.detach() # .item() ? 
+                action = action.detach.item() # .item() ? 
             
             log_prob = log_prob.detach()
             entropy = dist.entropy().sum(-1)
@@ -353,25 +353,45 @@ if __name__ == "__main__":
                     log_probs[pt] = log_prob
                     values[pt] = value
                     hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
-
-                # ? calculate return, advantages        
-                prev_value = 0  
-                running_return = 0
-                running_advant = 0
-                gamma = configs['gamma']
-                gae_lambda = configs['gae_lambda']
-                for t in reversed(range(start_pt, pt)):
-                    running_return = rewards[t] + gamma * (1 - dones[t]) * running_return
-                    returns[t] = running_return
-                    running_tderror = (
-                        rewards[t] + gamma * (1 - dones[t]) * prev_value - values[t]
-                    )
-                    running_advant = (
-                        running_tderror + gamma * gae_lambda * (1 - dones[t]) * running_advant
-                    )
-                    advantages[t] = running_advant
-                    prev_value = values[t]
                 
+                with torch.no_grad():
+                    trans = (obs, action, reward, done)
+                    next_value = agent.get_value(trans, hidden).reshape(1, -1)
+                    advantages = np.zeros_like(rewards)
+                    lastgaelam = 0
+                    for t in reversed(range(start_pt, pt)):
+                        if t == args.max_episode_steps - 1:
+                            nextnonterminal = 1.0 - next_done
+                            nextvalues = next_value
+                        else:
+                            nextnonterminal = 1.0 - dones[t + 1]
+                            nextvalues = values[t + 1]
+                        delta = rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - values[t]
+                        advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
+                    returns = advantages + values
+
+                
+                # ? calculate return, advantages      
+                # with torch.no_grad():  
+                #     prev_value = 0  
+                #     running_return = 0
+                #     running_advant = 0
+                #     gamma = configs['gamma']
+                #     gae_lambda = configs['gae_lambda']
+                #     for t in reversed(range(start_pt, pt)):
+                #         running_return = rewards[t] + gamma * (1 - dones[t]) * running_return
+                #         returns[t] = running_return
+                #         running_tderror = (
+                #             rewards[t] + gamma * (1 - dones[t]) * prev_value - values[t]
+                #         )
+                #         running_advant = (
+                #             running_tderror + gamma * gae_lambda * (1 - dones[t]) * running_advant
+                #         )
+                #         advantages[t] = running_advant
+                #         prev_value = values[t]
+                start_pt = pt
+                        
+                    
         results["meta_train_return"] = np.sum(rewards) / len(train_tasks)
         meta_train_return = results["meta_train_return"]
         print(f"meta_train_return: {meta_train_return}")
@@ -405,12 +425,12 @@ if __name__ == "__main__":
                 mb_advants = torch.tensor(advantages[mb_indices]).to(args.device)
                 mb_hiddens = torch.tensor(hiddens[mb_indices]).to(args.device)
                 
-                start_pt = pt
                 
                 mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
                 
                 if configs["norm_adv"]:
                     mb_advants = (mb_advants - mb_advants.mean()) / (mb_advants.std() + 1e-8)
+                    
                 _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
                     = agent.get_action_and_value(
                     mb_trans,
