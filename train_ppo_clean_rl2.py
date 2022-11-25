@@ -491,7 +491,7 @@ if __name__ == "__main__":
                         if done or cur_step == args.max_episode_steps:
                             break
             
-            results["meta_test_return"] = np.sum(rewards) / len(test_tasks)
+            results["meta_test_return"] = test_return / len(test_tasks)
             meta_test_return = results["meta_test_return"]
             print(f"meta_test_return: {meta_test_return}")
             tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
