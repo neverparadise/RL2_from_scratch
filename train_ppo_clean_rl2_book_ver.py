@@ -148,13 +148,8 @@ class Agent(nn.Module):
         self.num_discretes = configs["num_discretes"]
         self.is_deterministic = False
         
-        self.embedding = nn.Sequential(
-            layer_init(nn.Linear(self.input_dim, self.linear_dim)),
-            nn.LeakyReLU(),
-            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-        )
-        
-        self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
+        self.trans_dim = self.state_dim + self.action_dim + 2
+        self.gru = nn.GRU(self.trans_dim, self.hidden_dim, \
                             num_layers=self.num_rnn_layers, bias=True)
         if self.is_continuous:
             self.mean = layer_init(nn.Linear(self.hidden_dim, self.action_dim))
@@ -172,18 +167,12 @@ class Agent(nn.Module):
         )
         
     def forward(self, transition, hidden=None, is_training=False):
-        state, action, reward, done = transition
-        state = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
-        action = _format(action, self.action_dim, self.device, self.minibatch_size, is_training)
-        reward = _format(reward, 1, self.device, self.minibatch_size, is_training)
-        done = _format(done, 1, self.device, self.minibatch_size, is_training)
-        concatenated = torch.cat([state, action, reward, done], dim=-1)
+        transition = _format(transition, self.trans_dim, device, minibatch_size=1, is_training=False)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous() 
             # ! ??? 왜 permute 했지? mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
-        x = self.embedding(concatenated)
         hidden = to_tensor(hidden, device=self.device)
-        x, new_hidden = self.gru(x, hidden)
+        x, new_hidden = self.gru(transition, hidden)
         if self.is_continuous:
             mu = torch.tanh(self.mean(x))
             std = torch.exp(self.actor_logstd)
@@ -353,7 +342,7 @@ if __name__ == "__main__":
                     log_probs[pt] = log_prob
                     values[pt] = value
                     hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
-
+        
                 # ? calculate return, advantages        
                 prev_value = 0  
                 running_return = 0
@@ -372,6 +361,8 @@ if __name__ == "__main__":
                     advantages[t] = running_advant
                     prev_value = values[t]
                 
+                start_pt = pt
+                        
         results["meta_train_return"] = np.sum(rewards) / len(train_tasks)
         meta_train_return = results["meta_train_return"]
         print(f"meta_train_return: {meta_train_return}")
@@ -404,8 +395,6 @@ if __name__ == "__main__":
                 mb_returns = torch.tensor(returns[mb_indices]).to(args.device)
                 mb_advants = torch.tensor(advantages[mb_indices]).to(args.device)
                 mb_hiddens = torch.tensor(hiddens[mb_indices]).to(args.device)
-                
-                start_pt = pt
                 
                 mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
                 

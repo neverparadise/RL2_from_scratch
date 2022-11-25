@@ -216,7 +216,8 @@ class RNNAgent(nn.Module):
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
             mu = torch.tanh(self.mean(x))
-            std = torch.exp(self.actor_logstd)
+            action_logstd = self.actor_logstd.expand_as(mu)
+            std = torch.exp(action_logstd)
             # std = F.softplus(self.std(x))
             dist = Normal(mu, std)
         else:
