@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
     parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument("--suffle_mb", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=False)
     
     parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
