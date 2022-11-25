@@ -57,6 +57,8 @@ def parse_args():
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
     parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument("--suffle_mb", type=lambda x: bool(strtobool(x)), default=False)
+    
     parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
@@ -245,10 +247,14 @@ if __name__ == "__main__":
        
     if not args.meta_learning:
         args.num_episodes_per_trial = 1
-        args.exp_name = "CleanRL^2_No_MetaRL_ShuffleMB"
+        args.exp_name = "CleanRL^2_No_MetaRL"
+
         #args.env_name == "HalfCheetah-v3"
         train_tasks = [0]
         test_tasks = [0]
+        
+    if args.shuffle_mb:
+        args.exp_name += "_ShuffleMB"
     configs = add_state_action_info(env, configs)
 
     # logger
