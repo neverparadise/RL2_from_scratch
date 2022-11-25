@@ -22,9 +22,9 @@ min_std: 0.5 # e^-20
 max_std: 1.5 # e^2
 
 # network config
-linear_dim: 128
-trans_dim: 256
-hidden_dim: 128 
+linear_dim: 64
+trans_dim: 128
+hidden_dim: 64 
 is_recurrent: True
 num_rnn_layers: 1
 seq_len: 1
