@@ -449,21 +449,21 @@ if __name__ == "__main__":
                 policy_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                 # Value loss
-                # value_loss = F.mse_loss(mb_new_values, mb_returns)
+                value_loss = F.smooth_l1_loss(mb_new_values, mb_returns)
                 
-                mb_new_values = mb_new_values.view(-1)
-                if configs["clip_vloss"]:
-                    v_loss_unclipped = (mb_new_values - mb_returns) ** 2
-                    v_clipped = mb_values + torch.clamp(
-                        mb_new_values - mb_values,
-                        -configs["lr_clip_range"],
-                        configs["lr_clip_range"],
-                    )
-                    v_loss_clipped = (v_clipped - mb_returns) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    value_loss = 0.5 * v_loss_max.mean()
-                else:
-                    value_loss = 0.5 * ((mb_new_values - mb_returns) ** 2).mean()
+                # mb_new_values = mb_new_values.view(-1)
+                # if configs["clip_vloss"]:
+                #     v_loss_unclipped = (mb_new_values - mb_returns) ** 2
+                #     v_clipped = mb_values + torch.clamp(
+                #         mb_new_values - mb_values,
+                #         -configs["lr_clip_range"],
+                #         configs["lr_clip_range"],
+                #     )
+                #     v_loss_clipped = (v_clipped - mb_returns) ** 2
+                #     v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                #     value_loss = 0.5 * v_loss_max.mean()
+                # else:
+                #     value_loss = 0.5 * ((mb_new_values - mb_returns) ** 2).mean()
                 
                 entropy_loss = mb_entropy.mean()
                 total_loss = policy_loss - configs["ent_coef"] * entropy_loss + configs["vf_coef"] * value_loss 
