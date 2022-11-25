@@ -56,7 +56,7 @@ def parse_args():
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
-    parser.add_argument("--meta_learning", type=bool, default=False)
+    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
                         help="directory of tensorboard")
@@ -210,9 +210,11 @@ class Agent(nn.Module):
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
                 log_prob = log_prob.sum(-1)
-            while len(action.shape) != 1:
-                action = action.squeeze(0)
-                log_prob = log_prob.squeeze(0)
+            # while len(action.shape) != 1:
+            #     action = action.squeeze(0)
+            #     log_prob = log_prob.squeeze(0)
+            action = action.reshape(-1)
+            log_prob = log_prob.reshape(-1)
             # action = action.reshape(self.num_envs, -1)
             # log_prob = log_prob.reshape(self.num_envs,)
             if self.is_continuous:
@@ -278,14 +280,14 @@ if __name__ == "__main__":
     hiddens = np.zeros((args.batch_size, configs["num_rnn_layers"], configs["hidden_dim"]), dtype=np.float32)
     
     total_start_time = time.time()
-    for epoch in range(1, configs["n_epochs"] + 1):
+    for n_epoch in range(1, configs["n_epochs"] + 1):
         start_time = time.time()
         if args.anneal_lr:
-            frac = 1.0 - (epoch - 1.0) / configs["n_epochs"]
+            frac = 1.0 - (n_epoch - 1.0) / configs["n_epochs"]
             lrnow = frac * float(configs["lr"])
             optimizer.param_groups[0]["lr"] = lrnow
         
-        print(f"=============== Epoch {epoch} ===============")
+        print(f"=============== Epoch {n_epoch} ===============")
         start_time = time.time()
         results = {}
         
@@ -299,6 +301,7 @@ if __name__ == "__main__":
         for i, index in enumerate(indices): # 0, 1, 2, 3
             if not args.meta_learning:
                 index = 0
+            env.seed(args.seed + i)
             env.reset_task(index)
             agent.is_deterministic = False
             meta_batch_size = configs["meta_batch_size"]
@@ -365,7 +368,7 @@ if __name__ == "__main__":
         results["meta_train_return"] = np.sum(rewards) / len(train_tasks)
         meta_train_return = results["meta_train_return"]
         print(f"meta_train_return: {meta_train_return}")
-        tb_logger.add("charts/mean_meta_train_return", meta_train_return, epoch)
+        tb_logger.add("train/meta_train_mean_return", meta_train_return, n_epoch)
         
         # meta-training
         num_mini_batch = int(args.batch_size / configs["mini_batch_size"]) 
@@ -374,7 +377,7 @@ if __name__ == "__main__":
         sum_value_loss: float = 0
         
         b_indices = np.arange(args.batch_size)
-        for epoch in range(configs["k_epochs"]):
+        for k in range(configs["k_epochs"]):
             sum_total_loss_mini_batch = 0
             sum_policy_loss_mini_batch = 0
             sum_value_loss_mini_batch = 0
@@ -434,14 +437,21 @@ if __name__ == "__main__":
             sum_policy_loss += sum_policy_loss_mini_batch / num_mini_batch
             sum_value_loss += sum_value_loss_mini_batch / num_mini_batch
                 
-                
+        # logging
+        tb_logger.add("train/total_loss", sum_total_loss, n_epoch)
+        tb_logger.add("train/policy_loss", sum_policy_loss, n_epoch)
+        tb_logger.add("train/value_loss", sum_value_loss, n_epoch)
+        tb_logger.add("time/total_time", time.time() - total_start_time, n_epoch)
+        tb_logger.add("time/time_per_iter", time.time() - start_time, n_epoch)
+     
         # meta-testing
         test_return: float = 0
-        for index in test_tasks:
+        for j, index in enumerate(test_tasks):
             if not args.meta_learning:
                 index = 0
+            env.seed(args.seed-j)
             env.reset_task(index)
-            print(f"[{i + 1}/{meta_batch_size}] meta evaluating, current task: {env.get_task()}")
+            print(f"[{j + 1}/{len(test_tasks)}] meta evaluating, current task: {env.get_task()}")
             # ? episode rollout per trial
             hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
             for epi in range(args.num_episodes_per_trial): # 0, 1
@@ -469,18 +479,12 @@ if __name__ == "__main__":
         results["meta_test_return"] = np.sum(rewards) / len(test_tasks)
         meta_test_return = results["meta_test_return"]
         print(f"meta_test_return: {meta_test_return}")
-        tb_logger.add("test/meta_test_return", meta_test_return, epoch)
+        tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
             
-        # logging
-        tb_logger.add("train/total_loss", sum_total_loss, epoch)
-        tb_logger.add("train/policy_loss", sum_policy_loss, epoch)
-        tb_logger.add("train/value_loss", sum_value_loss, epoch)
-        tb_logger.add("time/total_time", time.time() - total_start_time, epoch)
-        tb_logger.add("time/time_per_iter", time.time() - start_time, epoch)
-     
+
 
         # save weight
-        if epoch % args.save_periods == 0:
+        if n_epoch % args.save_periods == 0:
             save_file_path = f"{args.env_name}_{args.exp_name}_{args.seed}_{args.now}"
             if not os.path.exists(save_file_path):
                 save_file_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.curdir, 'weights',save_file_path))
@@ -495,7 +499,7 @@ if __name__ == "__main__":
                         os.mkdir(save_file_path)
                     except:
                         pass
-            ckpt_path = os.path.join(save_file_path,"checkpoint_" + str(epoch) + ".pt")
+            ckpt_path = os.path.join(save_file_path,"checkpoint_" + str(n_epoch) + ".pt")
             print(save_file_path)
             torch.save(agent.state_dict(), ckpt_path)
 
