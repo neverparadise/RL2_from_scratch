@@ -255,6 +255,9 @@ if __name__ == "__main__":
         
     if args.shuffle_mb:
         args.exp_name += "_ShuffleMB"
+    else:
+        args.exp_name += "_NoShuffle"
+        
     configs = add_state_action_info(env, configs)
 
     # logger
