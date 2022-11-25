@@ -470,7 +470,7 @@ if __name__ == "__main__":
             for j, index in enumerate(test_tasks):
                 if not args.meta_learning:
                     index = 0
-                env.seed(args.seed-j)
+                env.seed(args.seed+2*j)
                 env.reset_task(index)
                 print(f"[{j + 1}/{len(test_tasks)}] meta evaluating, current task: {env.get_task()}")
                 # ? episode rollout per trial
