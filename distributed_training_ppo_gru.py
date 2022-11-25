@@ -7,7 +7,7 @@ ray.init(num_cpus=96, num_gpus=8)
 
 num_gpus = 8
 num_cpus = 96
-exp_per_cpus = 4
+exp_per_cpus = 2
 num_exps = num_cpus / exp_per_cpus
 gpu_fractions = num_gpus / num_exps
 
