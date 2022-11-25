@@ -465,37 +465,36 @@ if __name__ == "__main__":
         tb_logger.add("time/time_per_iter", time.time() - start_time, n_epoch)
      
         # meta-testing
-        if args.meta_learning:
-            test_return: float = 0
-            for j, index in enumerate(test_tasks):
-                if not args.meta_learning:
-                    index = 0
-                env.seed(args.seed+2*j)
-                env.reset_task(index)
-                print(f"[{j + 1}/{len(test_tasks)}] meta evaluating, current task: {env.get_task()}")
-                # ? episode rollout per trial
-                hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
-                for epi in range(args.num_episodes_per_trial): # 0, 1
-                    obs = env.reset()
-                    action = np.zeros(configs["action_dim"])
-                    reward = np.zeros(1)
-                    done = np.zeros(1)
-                    cur_step = 0
-        
-                    while not (done or cur_step == args.max_episode_steps):
-                        tran = (obs, action, reward, done)
-                        with torch.no_grad():
-                            action, log_prob, entropy, value, new_hidden \
-                                = agent.get_action_and_value(tran, hidden)
-                        next_obs, reward, done, info = env.step(action)
-                        reward = np.array(reward)
-                        test_return += reward
-                        done = np.array(done, dtype=int)
-                        hidden = new_hidden
-                        obs = next_obs
-                        cur_step += 1
-                        if done or cur_step == args.max_episode_steps:
-                            break
+        test_return: float = 0
+        for j, index in enumerate(test_tasks):
+            if not args.meta_learning:
+                index = 0
+            env.seed(args.seed+2*j)
+            env.reset_task(index)
+            print(f"[{j + 1}/{len(test_tasks)}] meta evaluating, current task: {env.get_task()}")
+            # ? episode rollout per trial
+            hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
+            for epi in range(args.num_episodes_per_trial): # 0, 1
+                obs = env.reset()
+                action = np.zeros(configs["action_dim"])
+                reward = np.zeros(1)
+                done = np.zeros(1)
+                cur_step = 0
+    
+                while not (done or cur_step == args.max_episode_steps):
+                    tran = (obs, action, reward, done)
+                    with torch.no_grad():
+                        action, log_prob, entropy, value, new_hidden \
+                            = agent.get_action_and_value(tran, hidden)
+                    next_obs, reward, done, info = env.step(action)
+                    reward = np.array(reward)
+                    test_return += reward
+                    done = np.array(done, dtype=int)
+                    hidden = new_hidden
+                    obs = next_obs
+                    cur_step += 1
+                    if done or cur_step == args.max_episode_steps:
+                        break
             
             results["meta_test_return"] = test_return / len(test_tasks)
             meta_test_return = results["meta_test_return"]
