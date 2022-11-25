@@ -387,7 +387,8 @@ if __name__ == "__main__":
             sum_total_loss_mini_batch = 0
             sum_policy_loss_mini_batch = 0
             sum_value_loss_mini_batch = 0
-            np.random.shuffle(b_indices)
+            if args.shuffle_mb:
+                np.random.shuffle(b_indices)
             for start in range(0, args.batch_size, configs["mini_batch_size"]):
                 end = start + configs["mini_batch_size"]
                 mb_indices = b_indices[start:end]
