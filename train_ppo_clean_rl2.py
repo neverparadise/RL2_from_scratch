@@ -56,7 +56,7 @@ def parse_args():
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
-    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=True)
     
     parser.add_argument("--debug", type=bool, default=True)
@@ -360,7 +360,7 @@ if __name__ == "__main__":
                     advantages = np.zeros_like(rewards)
                     lastgaelam = 0
                     for t in reversed(range(start_pt, pt)):
-                        if t == args.max_episode_steps - 1:
+                        if (t-start_pt) == args.max_episode_steps - 1:
                             nextnonterminal = 1.0 - next_done
                             nextvalues = next_value
                         else:
@@ -520,10 +520,10 @@ if __name__ == "__main__":
                     if done or cur_step == args.max_episode_steps:
                         break
             
-            results["meta_test_return"] = test_return / len(test_tasks)
-            meta_test_return = results["meta_test_return"]
-            print(f"meta_test_return: {meta_test_return}")
-            tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
+        results["meta_test_return"] = test_return / len(test_tasks)
+        meta_test_return = results["meta_test_return"]
+        print(f"meta_test_return: {meta_test_return}")
+        tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
             
 
 
