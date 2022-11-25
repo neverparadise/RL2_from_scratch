@@ -244,6 +244,7 @@ if __name__ == "__main__":
     if not args.meta_learning:
         args.num_episodes_per_trial = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
+        #args.env_name == "HalfCheetah-v3"
         train_tasks = [0]
         test_tasks = [0]
     configs = add_state_action_info(env, configs)
