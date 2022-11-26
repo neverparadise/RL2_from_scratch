@@ -203,6 +203,9 @@ class RNNAgent(nn.Module):
             self.policy_logits = layer_init(nn.Linear(self.hidden_dim, self.num_discretes))
         self.critic = nn.Sequential(
             layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.LeakyReLU(),
             layer_init(nn.Linear(self.linear_dim, 1))
         )
 

@@ -152,6 +152,9 @@ class Agent(nn.Module):
             layer_init(nn.Linear(self.input_dim, self.linear_dim)),
             nn.LeakyReLU(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.LeakyReLU(),
         )
         
         self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
@@ -168,6 +171,9 @@ class Agent(nn.Module):
         
         self.critic = nn.Sequential(
             layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.LeakyReLU(),
             layer_init(nn.Linear(self.linear_dim, 1))
         )
         
