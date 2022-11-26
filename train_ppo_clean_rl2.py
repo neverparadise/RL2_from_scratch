@@ -165,14 +165,26 @@ class Agent(nn.Module):
         self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
                             num_layers=self.num_rnn_layers, bias=True)
         if self.is_continuous:
-            self.mean = layer_init(nn.Linear(self.hidden_dim, self.action_dim))
+            self.mean = nn.Sequential(
+            layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
+            nn.Tanh(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.Tanh(),
+            layer_init(nn.Linear(self.linear_dim, self.action_dim), std=0.01),
+        )
             #self.actor_logstd = -0.5 * np.ones(self.action_dim, dtype=np.float32)
             #self.actor_logstd = torch.nn.Parameter(torch.Tensor(self.log_std))
             self.actor_logstd = nn.Parameter(torch.zeros(1, self.action_dim))
             
             #self.std =  layer_init(nn.Linear(self.hidden_dim, self.action_dim))
         else:
-            self.policy_logits = layer_init(nn.Linear(configs["hidden_dim"], self.num_discretes))
+            self.policy_logits =  nn.Sequential(
+                                layer_init(nn.Linear(self.hidden_dim, self.num_discretes)),
+                                nn.LeakyReLU(),
+                                layer_init(nn.Linear(self.linear_dim, self.num_discretes))
+                                )
+                                
+                                
         
         self.critic = nn.Sequential(
             layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
@@ -195,7 +207,7 @@ class Agent(nn.Module):
             concatenated = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous() 
-            # ! ??? 왜 permute 했지? mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
+            # ! mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
         x = self.embedding(concatenated)
         hidden = to_tensor(hidden, device=self.device)
         x, new_hidden = self.gru(x, hidden)
@@ -263,7 +275,7 @@ if __name__ == "__main__":
         args.num_episodes_per_trial = 1
         configs["meta_batch_size"] = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
-        args.env_name == "HalfCheetah-v3"
+        args.env_name = "HalfCheetah-v3"
         env = gym.make(args.env_name)
         train_tasks = [0]
         test_tasks = [0]

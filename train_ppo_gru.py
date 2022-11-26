@@ -196,7 +196,13 @@ class RNNAgent(nn.Module):
         self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
                             num_layers=self.num_rnn_layers, bias=True)
         if self.is_continuous:
-            self.mean = layer_init(nn.Linear(self.hidden_dim, self.action_dim))
+            self.mean = nn.Sequential(
+            layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
+            nn.Tanh(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.Tanh(),
+            layer_init(nn.Linear(self.linear_dim, self.action_dim), std=0.01),
+            )
             self.actor_logstd = nn.Parameter(torch.zeros(1, self.action_dim))
             #self.actor_logstd =  layer_init(nn.Linear(self.hidden_dim, self.action_dim))
         else:
