@@ -276,8 +276,9 @@ if __name__ == "__main__":
         configs["meta_batch_size"] = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
         #args.env_name = "HalfCheetah-v3"
-        #args.env_name = "LunarLanderContinuous-v2"
-        args.env_name = "CartPole-v1"
+        args.env_name = "MountainCar-v0"
+        args.env_name = "MountainCarContinuous-v0"
+        #args.env_name = "CartPole-v1"
 
         env = gym.make(args.env_name)
         train_tasks = [0]
@@ -578,7 +579,7 @@ if __name__ == "__main__":
      
         # meta-testing
         if args.meta_learning:
-            test_return: float = 0
+            test_return: float = 0.0
             for j, index in enumerate(test_tasks):
                 if not args.meta_learning:
                     index = 0
@@ -626,7 +627,6 @@ if __name__ == "__main__":
                     action, log_prob, entropy, value, new_hidden \
                         = agent.get_action_and_value(obs, hidden)
                 next_obs, reward, done, info = env.step(action)
-                reward = np.array(reward)
                 test_return += reward
                 done = np.array(done, dtype=int)
                 hidden = new_hidden
