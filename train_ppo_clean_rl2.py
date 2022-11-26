@@ -56,7 +56,7 @@ def parse_args():
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
-    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument("--same_task", type=lambda x: bool(strtobool(x)), default=False)
     
@@ -191,8 +191,8 @@ class Agent(nn.Module):
             done = _format(done, 1, self.device, self.minibatch_size, is_training)
             concatenated = torch.cat([state, action, reward, done], dim=-1)
         else:
-            state = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
-            concatenated = state
+            state = transition 
+            concatenated = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
         if is_training:
             hidden = hidden.permute(1, 0, 2).contiguous() 
             # ! ??? 왜 permute 했지? mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
@@ -260,11 +260,11 @@ if __name__ == "__main__":
     
     
     else:
-        env = gym.make("")
         args.num_episodes_per_trial = 1
         configs["meta_batch_size"] = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
         args.env_name == "HalfCheetah-v3"
+        env = gym.make(args.env_name)
         train_tasks = [0]
         test_tasks = [0]
         
@@ -293,8 +293,6 @@ if __name__ == "__main__":
     # agent
     agent = Agent(args, configs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=float(configs["lr"]), eps=1e-5)
-    
-    # buffer
     # ! batch_size = meta_batch_size * max_steps or meta_batch_size * rollout_steps
     b_observations = np.zeros((args.batch_size, configs["state_dim"]), dtype=np.float32)
     b_actions = np.zeros((args.batch_size, configs["action_dim"]), dtype=np.float32)
@@ -305,9 +303,10 @@ if __name__ == "__main__":
     b_returns = np.zeros((args.batch_size,1), dtype=np.float32)
     b_advantages = np.zeros((args.batch_size,1), dtype=np.float32)
     b_hiddens = np.zeros((args.batch_size, configs["num_rnn_layers"], configs["hidden_dim"]), dtype=np.float32)
-    
+
     total_start_time = time.time()
     for n_epoch in range(1, configs["n_epochs"] + 1):
+            # buffer
         start_time = time.time()
         if args.anneal_lr:
             frac = 1.0 - (n_epoch - 1.0) / configs["n_epochs"]
@@ -364,7 +363,6 @@ if __name__ == "__main__":
                         pt += 1
                         if done or cur_step == args.max_episode_steps:
                             break
-                        
                         b_observations[pt] = obs
                         b_actions[pt] = action
                         b_rewards[pt] = reward
@@ -372,10 +370,11 @@ if __name__ == "__main__":
                         b_log_probs[pt] = log_prob
                         b_values[pt] = value
                         b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
-                    
+
+
                     with torch.no_grad():
                         trans = (obs, action, reward, done)
-                        next_value = agent.get_value(trans, hidden).reshape(1, -1)
+                        next_value = agent.get_value(trans, new_hidden).reshape(1, -1)
                         lastgaelam = 0
                         for t in reversed(range(start_pt, pt)):
                             if (t-start_pt) == args.max_episode_steps - 1:
@@ -386,7 +385,7 @@ if __name__ == "__main__":
                                 nextvalues = b_values[t + 1]
                             delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
                             b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
-                        b_returns[start_pt:pt] = (b_advantages[start:pt] + b_values[start:pt]).copy()
+                        b_returns[start_pt:pt] = (b_advantages[start_pt:pt] + b_values[start_pt:pt]).copy()
 
                     
                     # ? calculate return, advantages      
@@ -416,9 +415,9 @@ if __name__ == "__main__":
             tb_logger.add("train/meta_train_mean_return", meta_train_return, n_epoch)
         
         else: 
-            env.seed(args.seed + i)
+            env.seed(args.seed)
             meta_batch_size = configs["meta_batch_size"]
-            print(f"[{i + 1}/{meta_batch_size}] collecting samples")
+            print(f"1/{meta_batch_size}] collecting samples")
             hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
             cur_step = 0
             obs = env.reset()
@@ -426,14 +425,10 @@ if __name__ == "__main__":
             while not (done or cur_step == args.max_episode_steps):
                 with torch.no_grad():
                     action, log_prob, entropy, value, new_hidden \
-                        = agent.get_action_and_value(tran, hidden)
+                        = agent.get_action_and_value(obs, hidden)
                 next_obs, reward, done, info = env.step(action)
-                cur_step += 1
-                pt += 1
-                
                 reward = np.array(reward)
                 done = np.array(done, dtype=int)
-                
                 b_observations[pt] = obs
                 b_actions[pt] = action
                 b_rewards[pt] = reward
@@ -441,16 +436,16 @@ if __name__ == "__main__":
                 b_log_probs[pt] = log_prob
                 b_values[pt] = value
                 b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
-                
-                if done or cur_step == args.max_episode_steps:
-                    break
-
                 hidden = new_hidden
                 obs = next_obs
                 next_done = done
+                cur_step += 1
+                pt += 1
+                if done or cur_step == args.max_episode_steps:
+                    break
             
             with torch.no_grad():
-                next_value = agent.get_value(next_obs, hidden).reshape(1, -1)
+                next_value = agent.get_value(next_obs, new_hidden).reshape(1, -1)
                 lastgaelam = 0
                 for t in reversed(range(start_pt, pt)):
                     if (t-start_pt) == args.max_episode_steps - 1:
@@ -461,10 +456,10 @@ if __name__ == "__main__":
                         nextvalues = b_values[t + 1]
                     delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
                     b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
-                b_returns[start_pt:pt] = (b_advantages[start:pt] + b_values[start:pt]).copy()
+                b_returns[start_pt:pt] = (b_advantages[start_pt:pt] + b_values[start_pt:pt]).copy()
             start_pt = pt
 
-            results["train_return"] = np.sum(b_rewards) / len(train_tasks)
+            results["train_return"] = np.sum(b_rewards)
             train_return = results["train_return"]
             print(f"train_return: {train_return}")
             tb_logger.add("train/train_return", train_return, n_epoch)
@@ -496,21 +491,28 @@ if __name__ == "__main__":
                 mb_advants = torch.tensor(b_advantages[mb_indices]).to(args.device)
                 mb_hiddens = torch.tensor(b_hiddens[mb_indices]).to(args.device)
                 
-                
-                mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
-                
                 if configs["norm_adv"]:
                     mb_advants = (mb_advants - mb_advants.mean()) / (mb_advants.std() + 1e-8)
-                    
-                _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
-                    = agent.get_action_and_value(
-                    mb_trans,
-                    mb_hiddens,
-                    mb_acts,
-                    is_training=True
-                )
+                
+                if args.meta_learning:
+                    mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
+                    _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
+                        = agent.get_action_and_value(
+                        mb_trans,
+                        mb_hiddens,
+                        mb_acts,
+                        is_training=True
+                    )
+                else: 
+                    _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
+                        = agent.get_action_and_value(
+                        mb_obs,
+                        mb_hiddens,
+                        mb_acts,
+                        is_training=True
+                    )
                     # transition ,hidden, action=None, is_training=False,
-                    
+                
                 logratio = mb_new_log_probs - mb_old_log_probs
                 ratio = logratio.exp()
                 
@@ -598,7 +600,27 @@ if __name__ == "__main__":
             tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
         
         else: # no meta rl evaluation
-            results["test_return"] = test_return / len(train_tasks)
+            test_return: float = 0
+            env.seed(args.seed+1)
+            print(f"1/{len(test_tasks)}] meta evaluating")
+            hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
+            obs = env.reset()
+            cur_step = 0
+            while not (done or cur_step == args.max_episode_steps):
+                with torch.no_grad():
+                    action, log_prob, entropy, value, new_hidden \
+                        = agent.get_action_and_value(obs, hidden)
+                next_obs, reward, done, info = env.step(action)
+                reward = np.array(reward)
+                test_return += reward
+                done = np.array(done, dtype=int)
+                hidden = new_hidden
+                obs = next_obs
+                cur_step += 1
+                if done or cur_step == args.max_episode_steps:
+                    break
+            
+            results["test_return"] = test_return
             test_return = results["test_return"]
             print(f"train_return: {test_return}")
             tb_logger.add("test/test_return", test_return, n_epoch)
