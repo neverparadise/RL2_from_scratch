@@ -74,7 +74,7 @@ def parse_args():
     #       help="the id of the environment")
     parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
     # parser.add_argument("--env_name", type=str, default="Ant")
-    parser.add_argument("--total-timesteps", type=int, default=2000000,
+    parser.add_argument("--total-timesteps", type=int, default=20000000,
                         help="total timesteps of the experiments")
     parser.add_argument('--rollout_steps', default=256)
     parser.add_argument('--max_episode_steps', default=1000)
