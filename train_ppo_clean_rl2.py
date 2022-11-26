@@ -179,7 +179,7 @@ class Agent(nn.Module):
             #self.std =  layer_init(nn.Linear(self.hidden_dim, self.action_dim))
         else:
             self.policy_logits =  nn.Sequential(
-                                layer_init(nn.Linear(self.hidden_dim, self.num_discretes)),
+                                layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
                                 nn.LeakyReLU(),
                                 layer_init(nn.Linear(self.linear_dim, self.num_discretes))
                                 )
@@ -247,16 +247,16 @@ class Agent(nn.Module):
             log_prob = log_prob.reshape(-1)
             # action = action.reshape(self.num_envs, -1)
             # log_prob = log_prob.reshape(self.num_envs,)
-            if self.is_continuous:
-                action = action.detach()
-            else:
-                action = action.detach.item() # .item() ? 
-            
             log_prob = log_prob.detach()
             entropy = dist.entropy().sum(-1)
             value = value.detach()
-            return action.cpu().numpy(), log_prob.cpu().numpy(), entropy.cpu().numpy(), value.cpu().numpy(), new_hidden.cpu().numpy()
-    
+            if self.is_continuous:
+                action = action.detach()
+                return action.cpu().numpy(), log_prob.cpu().numpy(), entropy.cpu().numpy(), value.cpu().numpy(), new_hidden.cpu().numpy()
+                
+            else:
+                action = action.detach().item() # .item() ? 
+                return action, log_prob.cpu().numpy(), entropy.cpu().numpy(), value.cpu().numpy(), new_hidden.cpu().numpy()
 
 if __name__ == "__main__":
     args = parse_args()
@@ -275,7 +275,10 @@ if __name__ == "__main__":
         args.num_episodes_per_trial = 1
         configs["meta_batch_size"] = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
-        args.env_name = "HalfCheetah-v3"
+        #args.env_name = "HalfCheetah-v3"
+        #args.env_name = "LunarLanderContinuous-v2"
+        args.env_name = "CartPole-v1"
+
         env = gym.make(args.env_name)
         train_tasks = [0]
         test_tasks = [0]
@@ -634,7 +637,7 @@ if __name__ == "__main__":
             
             results["test_return"] = test_return
             test_return = results["test_return"]
-            print(f"train_return: {test_return}")
+            print(f"test_return: {test_return}")
             tb_logger.add("test/test_return", test_return, n_epoch)
 
 
