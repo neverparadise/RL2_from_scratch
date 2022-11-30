@@ -1,6 +1,6 @@
 # algorithm config
-lr: 5e-4
-mini_batch_size: 64
+lr: 0.0005
+mini_batch_size: 32
 meta_batch_size: 10
 num_tasks: 130
 num_train_tasks: 100
@@ -12,7 +12,7 @@ stop_goal: 180
 gamma: 0.99
 gae_lambda: 0.95
 lr_clip_range: 0.2
-ent_coef: 1e-3
+ent_coef: 0.001
 vf_coef: 0.2
 max_grad_norm: 5
 normalize_inputs: True
@@ -23,7 +23,7 @@ max_std: 1.5 # e^2
 
 # network config
 linear_dim: 128
-trans_dim: 256
+trans_dim: 128
 hidden_dim: 128 
 is_recurrent: True
 num_rnn_layers: 2
