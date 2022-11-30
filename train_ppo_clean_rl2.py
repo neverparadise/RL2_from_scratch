@@ -56,9 +56,9 @@ def parse_args():
                         help="weight path for saving model")
     parser.add_argument("--save_periods", type=int, default=50)
     # ? training 시 바꿔줄 것 (False)
-    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--meta_learning", type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument("--shuffle_mb", type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument("--same_task", type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument("--same_task", type=lambda x: bool(strtobool(x)), default=True)
     
     parser.add_argument("--debug", type=bool, default=True)
     parser.add_argument("--results_log_dir", type=str, default="./logs",
@@ -66,11 +66,14 @@ def parse_args():
 
     #  Environments information
     parser.add_argument("--env_name", type=str, default="HalfCheetahDirEnv")
+    # parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
+    # parser.add_argument("--env_name", type=str, default="CartPole-v1")
+    
     # parser.add_argument("--total-timesteps", type=int, default=1000000,
     #                     help="total timesteps of the experiments")
     # parser.add_argument('--rollout_steps', default=512)
     parser.add_argument('--num_episodes_per_trial', default=2)
-    parser.add_argument('--max_episode_steps', default=200)
+    parser.add_argument('--max_episode_steps', default=500)
     # parser.add_argument("--num-envs", type=int, default=1,
                         # help="the number of parallel game environments")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
@@ -155,11 +158,12 @@ class Agent(nn.Module):
         
         self.embedding = nn.Sequential(
             layer_init(nn.Linear(self.input_dim, self.linear_dim)),
+            nn.Tanh(),
+            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
+            nn.Tanh(),
             nn.LeakyReLU(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-            nn.LeakyReLU(),
-            layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
         )
         
         self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
@@ -179,18 +183,14 @@ class Agent(nn.Module):
             #self.std =  layer_init(nn.Linear(self.hidden_dim, self.action_dim))
         else:
             self.policy_logits =  nn.Sequential(
-                                layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
-                                nn.LeakyReLU(),
-                                layer_init(nn.Linear(self.linear_dim, self.num_discretes))
+                                layer_init(nn.Linear(self.hidden_dim, self.num_discretes)),
                                 )
-                                
-                                
         
         self.critic = nn.Sequential(
             layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, 1))
         )
         
@@ -212,7 +212,7 @@ class Agent(nn.Module):
         hidden = to_tensor(hidden, device=self.device)
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
-            mu = torch.tanh(self.mean(x))
+            mu = self.mean(x)
             action_logstd = self.actor_logstd.expand_as(mu)
             std = torch.exp(action_logstd)
             # std = F.softplus(self.std(x))
@@ -230,8 +230,10 @@ class Agent(nn.Module):
     def get_action_and_value(self, transition ,hidden, action=None, is_training=False):
         x, dist, new_hidden = self.forward(transition, hidden, is_training=is_training)
         value = self.critic(x)
+        entropy = dist.entropy()
+        
         if is_training:
-            return action, dist.log_prob(action).sum(-1), dist.entropy().sum(-1), value, new_hidden
+            return action, dist.log_prob(action), entropy, value, new_hidden
         else: # evaluation
             if self.is_deterministic:
                 action = dist.mean
@@ -239,24 +241,21 @@ class Agent(nn.Module):
             else: # stochastic
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
-                log_prob = log_prob.sum(-1)
             # while len(action.shape) != 1:
             #     action = action.squeeze(0)
             #     log_prob = log_prob.squeeze(0)
-            action = action.reshape(-1)
-            log_prob = log_prob.reshape(-1)
-            # action = action.reshape(self.num_envs, -1)
-            # log_prob = log_prob.reshape(self.num_envs,)
+
             log_prob = log_prob.detach()
-            entropy = dist.entropy().sum(-1)
             value = value.detach()
             if self.is_continuous:
+                action = action.reshape(self.action_dim,)
+                log_prob = log_prob.reshape(self.action_dim,)
                 action = action.detach()
-                return action.cpu().numpy(), log_prob.cpu().numpy(), entropy.cpu().numpy(), value.cpu().numpy(), new_hidden.cpu().numpy()
+                return action.cpu(), log_prob.cpu(), entropy.cpu(), value.cpu(), new_hidden.cpu()
                 
             else:
                 action = action.detach().item() # .item() ? 
-                return action, log_prob.cpu().numpy(), entropy.cpu().numpy(), value.cpu().numpy(), new_hidden.cpu().numpy()
+                return action, log_prob.cpu(), entropy.cpu(), value.cpu(), new_hidden.cpu()
 
 if __name__ == "__main__":
     args = parse_args()
@@ -276,8 +275,8 @@ if __name__ == "__main__":
         configs["meta_batch_size"] = 1
         args.exp_name = "CleanRL^2_No_MetaRL"
         #args.env_name = "HalfCheetah-v3"
-        args.env_name = "MountainCar-v0"
-        args.env_name = "MountainCarContinuous-v0"
+        #args.env_name = "MountainCar-v0"
+        #args.env_name = "MountainCarContinuous-v0"
         #args.env_name = "CartPole-v1"
 
         env = gym.make(args.env_name)
@@ -310,15 +309,15 @@ if __name__ == "__main__":
     agent = Agent(args, configs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=float(configs["lr"]), eps=1e-5)
     # ! batch_size = meta_batch_size * max_steps or meta_batch_size * rollout_steps
-    b_observations = np.zeros((args.batch_size, configs["state_dim"]), dtype=np.float32)
-    b_actions = np.zeros((args.batch_size, configs["action_dim"]), dtype=np.float32)
-    b_rewards = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_dones = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_log_probs = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_values = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_returns = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_advantages = np.zeros((args.batch_size,1), dtype=np.float32)
-    b_hiddens = np.zeros((args.batch_size, configs["num_rnn_layers"], configs["hidden_dim"]), dtype=np.float32)
+    b_observations = torch.zeros((args.batch_size, configs["state_dim"]), dtype=torch.float32)
+    b_actions = torch.zeros((args.batch_size, configs["action_dim"]), dtype=torch.float32)
+    b_rewards = torch.zeros((args.batch_size,1), dtype=torch.float32)
+    b_dones = torch.zeros((args.batch_size,1), dtype=torch.float32)
+    b_log_probs = torch.zeros((args.batch_size, configs["action_dim"]), dtype=torch.float32)
+    b_values = torch.zeros((args.batch_size,1), dtype=torch.float32)
+    b_returns = torch.zeros((args.batch_size,1), dtype=torch.float32)
+    b_advantages = torch.zeros((args.batch_size,1), dtype=torch.float32)
+    b_hiddens = torch.zeros((args.batch_size, configs["num_rnn_layers"], configs["hidden_dim"]), dtype=torch.float32)
 
     total_start_time = time.time()
     for n_epoch in range(1, configs["n_epochs"] + 1):
@@ -339,7 +338,7 @@ if __name__ == "__main__":
         
         # ? meta batch sampling (task sampling)
         pt = 0
-        start_pt = 0
+        final_pt = 0
         if args.meta_learning:
             for i, index in enumerate(indices): # 0, 1, 2, 3
                 env.seed(args.seed + i)
@@ -351,7 +350,7 @@ if __name__ == "__main__":
                 print(f"[{i + 1}/{meta_batch_size}] collecting samples, current task: {env.get_task()}")
                 
                 # ? episode rollout per trial
-                hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
+                hidden = torch.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
 
                 for epi in range(args.num_episodes_per_trial): # 0, 1
                     cur_step = 0
@@ -359,16 +358,18 @@ if __name__ == "__main__":
                     action = np.zeros(configs["action_dim"])
                     reward = np.zeros(1)
                     done = np.zeros(1)
-                    b_observations[pt] = obs
-                    b_actions[pt] = action
-                    b_rewards[pt] = reward
-                    b_dones[pt] = done
-                    b_hiddens[pt] = hidden
+                    b_observations[pt] = torch.tensor(obs).cpu()
+                    b_actions[pt] = torch.tensor(action).cpu()
+                    b_rewards[pt] = torch.tensor(reward).cpu()
+                    b_dones[pt] = torch.tensor(done).cpu()
+                    b_hiddens[pt] = torch.tensor(hidden).cpu()
                     while not (done or cur_step == args.max_episode_steps):
                         tran = (obs, action, reward, done)
                         with torch.no_grad():
                             action, log_prob, entropy, value, new_hidden \
                                 = agent.get_action_and_value(tran, hidden)
+                        if configs['is_continuous']:
+                            action = action.numpy()
                         next_obs, reward, done, info = env.step(action)
                         reward = np.array(reward)
                         done = np.array(done, dtype=int)
@@ -379,21 +380,21 @@ if __name__ == "__main__":
                         pt += 1
                         if done or cur_step == args.max_episode_steps:
                             break
-                        b_observations[pt] = obs
-                        b_actions[pt] = action
-                        b_rewards[pt] = reward
-                        b_dones[pt] = done
-                        b_log_probs[pt] = log_prob
-                        b_values[pt] = value
-                        b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
+                        b_observations[pt] = torch.tensor(obs).cpu()
+                        b_actions[pt] = torch.tensor(action).cpu()
+                        b_rewards[pt] = torch.tensor(reward).cpu()
+                        b_dones[pt] = torch.tensor(done).cpu()
+                        b_log_probs[pt] = torch.tensor(log_prob).cpu()
+                        b_values[pt] = torch.tensor(value).cpu()
+                        b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"]).cpu()
 
 
                     with torch.no_grad():
                         trans = (obs, action, reward, done)
-                        next_value = agent.get_value(trans, new_hidden).reshape(1, -1)
+                        next_value = agent.get_value(trans, new_hidden)
                         lastgaelam = 0
-                        for t in reversed(range(start_pt, pt)):
-                            if (t-start_pt) == args.max_episode_steps - 1:
+                        for t in reversed(range(final_pt, pt)):
+                            if (t-final_pt) == args.max_episode_steps - 1:
                                 nextnonterminal = 1.0 - next_done
                                 nextvalues = next_value
                             else:
@@ -401,7 +402,7 @@ if __name__ == "__main__":
                                 nextvalues = b_values[t + 1]
                             delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
                             b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
-                        b_returns[start_pt:pt] = (b_advantages[start_pt:pt] + b_values[start_pt:pt]).copy()
+                        b_returns[final_pt:pt] = (b_advantages[final_pt:pt] + b_values[final_pt:pt]).clone()
 
                     
                     # ? calculate return, advantages      
@@ -411,7 +412,7 @@ if __name__ == "__main__":
                     #     running_advant = 0
                     #     gamma = configs['gamma']
                     #     gae_lambda = configs['gae_lambda']
-                    #     for t in reversed(range(start_pt, pt)):
+                    #     for t in reversed(range(final_pt, pt)):
                     #         running_return = rewards[t] + gamma * (1 - dones[t]) * running_return
                     #         returns[t] = running_return
                     #         running_tderror = (
@@ -422,10 +423,10 @@ if __name__ == "__main__":
                     #         )
                     #         advantages[t] = running_advant
                     #         prev_value = values[t]
-                    start_pt = pt
+                    final_pt = pt
                             
                         
-            results["meta_train_return"] = np.sum(b_rewards) / len(train_tasks)
+            results["meta_train_return"] = b_rewards.sum() / len(train_tasks)
             meta_train_return = results["meta_train_return"]
             print(f"meta_train_return: {meta_train_return}")
             tb_logger.add("train/meta_train_mean_return", meta_train_return, n_epoch)
@@ -434,24 +435,29 @@ if __name__ == "__main__":
             env.seed(args.seed)
             meta_batch_size = configs["meta_batch_size"]
             print(f"1/{meta_batch_size}] collecting samples")
-            hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
+            hidden = torch.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
             cur_step = 0
             obs = env.reset()
             done = False
+            train_return: float = 0.0
+            
             while not (done or cur_step == args.max_episode_steps):
                 with torch.no_grad():
                     action, log_prob, entropy, value, new_hidden \
                         = agent.get_action_and_value(obs, hidden)
+                if configs['is_continuous']:
+                    action = action.numpy()
                 next_obs, reward, done, info = env.step(action)
+                train_return += reward
                 reward = np.array(reward)
                 done = np.array(done, dtype=int)
-                b_observations[pt] = obs
-                b_actions[pt] = action
-                b_rewards[pt] = reward
-                b_dones[pt] = done
-                b_log_probs[pt] = log_prob
-                b_values[pt] = value
-                b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"])
+                b_observations[pt] = torch.tensor(obs).cpu()
+                b_actions[pt] = torch.tensor(action).cpu()
+                b_rewards[pt] = torch.tensor(reward).cpu()
+                b_dones[pt] = torch.tensor(done).cpu()
+                b_log_probs[pt] = torch.tensor(log_prob).cpu()
+                b_values[pt] = torch.tensor(value).cpu()
+                b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"]).cpu()
                 hidden = new_hidden
                 obs = next_obs
                 next_done = done
@@ -461,10 +467,10 @@ if __name__ == "__main__":
                     break
             
             with torch.no_grad():
-                next_value = agent.get_value(next_obs, new_hidden).reshape(1, -1)
+                next_value = agent.get_value(next_obs, new_hidden)
                 lastgaelam = 0
-                for t in reversed(range(start_pt, pt)):
-                    if (t-start_pt) == args.max_episode_steps - 1:
+                for t in reversed(range(final_pt, pt)):
+                    if (t-final_pt) == args.max_episode_steps - 1:
                         nextnonterminal = 1.0 - next_done
                         nextvalues = next_value
                     else:
@@ -472,11 +478,10 @@ if __name__ == "__main__":
                         nextvalues = b_values[t + 1]
                     delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
                     b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
-                b_returns[start_pt:pt] = (b_advantages[start_pt:pt] + b_values[start_pt:pt]).copy()
-            start_pt = pt
+                b_returns[final_pt:pt] = (b_advantages[final_pt:pt] + b_values[final_pt:pt]).clone()
+            final_pt = pt
 
-            results["train_return"] = np.sum(b_rewards)
-            train_return = results["train_return"]
+            results["train_return"] = train_return
             print(f"train_return: {train_return}")
             tb_logger.add("train/train_return", train_return, n_epoch)
         # training with ppo-objective
@@ -485,90 +490,97 @@ if __name__ == "__main__":
         sum_policy_loss: float = 0
         sum_value_loss: float = 0
         
-        b_indices = np.arange(args.batch_size)
-        for k in range(configs["k_epochs"]):
-            sum_total_loss_mini_batch = 0
-            sum_policy_loss_mini_batch = 0
-            sum_value_loss_mini_batch = 0
-            if args.shuffle_mb:
-                np.random.shuffle(b_indices)
-            for start in range(0, args.batch_size, configs["mini_batch_size"]):
-                end = start + configs["mini_batch_size"]
-                mb_indices = b_indices[start:end]
+        if b_observations.shape[0] > configs['mini_batch_size']:
+            b_indices = np.arange(0, final_pt)
+            for k in range(configs["k_epochs"]):
+                sum_total_loss_mini_batch = 0
+                sum_policy_loss_mini_batch = 0
+                sum_value_loss_mini_batch = 0
+                if args.shuffle_mb:
+                    np.random.shuffle(b_indices)
+                for start in range(0, args.batch_size, configs["mini_batch_size"]):
+                    end = start + configs["mini_batch_size"]
+                    if end > final_pt:
+                        end = final_pt
+                    mb_indices = b_indices[start:end]
 
-                 # * mini batches
-                mb_obs = torch.tensor(b_observations[mb_indices]).to(args.device)
-                mb_acts = torch.tensor(b_actions[mb_indices]).to(args.device)
-                mb_rews = torch.tensor(b_rewards[mb_indices]).to(args.device)
-                mb_dones = torch.tensor(b_dones[mb_indices]).to(args.device)
-                mb_old_log_probs = torch.tensor(b_log_probs[mb_indices]).to(args.device)
-                mb_values = torch.tensor(b_values[mb_indices]).to(args.device)
-                mb_returns = torch.tensor(b_returns[mb_indices]).to(args.device)
-                mb_advants = torch.tensor(b_advantages[mb_indices]).to(args.device)
-                mb_hiddens = torch.tensor(b_hiddens[mb_indices]).to(args.device)
-                
-                if configs["norm_adv"]:
-                    mb_advants = (mb_advants - mb_advants.mean()) / (mb_advants.std() + 1e-8)
-                
-                if args.meta_learning:
-                    mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
-                    _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
-                        = agent.get_action_and_value(
-                        mb_trans,
-                        mb_hiddens,
-                        mb_acts,
-                        is_training=True
-                    )
-                else: 
-                    _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
-                        = agent.get_action_and_value(
-                        mb_obs,
-                        mb_hiddens,
-                        mb_acts,
-                        is_training=True
-                    )
-                    # transition ,hidden, action=None, is_training=False,
-                
-                logratio = mb_new_log_probs - mb_old_log_probs
-                ratio = logratio.exp()
-                
-                # Policy loss
-                pg_loss1 = -mb_advants * ratio
-                pg_loss2 = -mb_advants * torch.clamp(ratio, 1 - configs["lr_clip_range"], 1 + configs["lr_clip_range"])
-                policy_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    # * mini batches
+                    mb_obs = b_observations[mb_indices].to(args.device)
+                    mb_acts = b_actions[mb_indices].to(args.device)
+                    mb_rews = b_rewards[mb_indices].to(args.device)
+                    mb_dones = b_dones[mb_indices].to(args.device)
+                    mb_old_log_probs = b_log_probs[mb_indices].to(args.device)
+                    mb_values = b_values[mb_indices].to(args.device)
+                    mb_returns = b_returns[mb_indices].to(args.device)
+                    mb_advants = b_advantages[mb_indices].to(args.device)
+                    mb_hiddens = b_hiddens[mb_indices].to(args.device)
+                    
+                    if configs["norm_adv"]:
+                        mb_advants = (mb_advants - mb_advants.mean()) / (mb_advants.std() + 1e-8)
+                    #print(mb_advants)
+                    if args.meta_learning:
+                        mb_trans = (mb_obs, mb_acts, mb_rews, mb_dones)
+                        _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
+                            = agent.get_action_and_value(
+                            mb_trans,
+                            mb_hiddens,
+                            mb_acts,
+                            is_training=True
+                        )
+                    else: 
+                        _, mb_new_log_probs, mb_entropy, mb_new_values, mb_new_hiddens \
+                            = agent.get_action_and_value(
+                            mb_obs,
+                            mb_hiddens,
+                            mb_acts,
+                            is_training=True
+                        )
+                        # transition ,hidden, action=None, is_training=False,
+                    
+                    if configs['is_continuous']:
+                        logratio = mb_new_log_probs.squeeze(0).sum(1) - mb_old_log_probs.sum(1)
+                    else:
+                        logratio = mb_new_log_probs - mb_old_log_probs
+                        
+                    logratio = mb_new_log_probs - mb_old_log_probs
+                    ratio = logratio.exp()
+                    
+                    # Policy loss
+                    pg_loss1 = -mb_advants * ratio
+                    pg_loss2 = -mb_advants * torch.clamp(ratio, 1 - configs["lr_clip_range"], 1 + configs["lr_clip_range"])
+                    policy_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # Value loss
-                value_loss = F.smooth_l1_loss(mb_new_values, mb_returns)
-                
-                # mb_new_values = mb_new_values.view(-1)
-                # if configs["clip_vloss"]:
-                #     v_loss_unclipped = (mb_new_values - mb_returns) ** 2
-                #     v_clipped = mb_values + torch.clamp(
-                #         mb_new_values - mb_values,
-                #         -configs["lr_clip_range"],
-                #         configs["lr_clip_range"],
-                #     )
-                #     v_loss_clipped = (v_clipped - mb_returns) ** 2
-                #     v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                #     value_loss = 0.5 * v_loss_max.mean()
-                # else:
-                #     value_loss = 0.5 * ((mb_new_values - mb_returns) ** 2).mean()
-                
-                entropy_loss = mb_entropy.mean()
-                total_loss = policy_loss - configs["ent_coef"] * entropy_loss + configs["vf_coef"] * value_loss 
-                optimizer.zero_grad()
-                total_loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), configs["max_grad_norm"])
-                optimizer.step()
-                
-                sum_total_loss_mini_batch += total_loss
-                sum_policy_loss_mini_batch += policy_loss
-                sum_value_loss_mini_batch += value_loss
-                
-                            
-            sum_total_loss += sum_total_loss_mini_batch / num_mini_batch
-            sum_policy_loss += sum_policy_loss_mini_batch / num_mini_batch
-            sum_value_loss += sum_value_loss_mini_batch / num_mini_batch
+                    # Value loss
+                    value_loss = F.smooth_l1_loss(mb_new_values, mb_returns)
+                    
+                    # mb_new_values = mb_new_values.view(-1)
+                    # if configs["clip_vloss"]:
+                    #     v_loss_unclipped = (mb_new_values - mb_returns) ** 2
+                    #     v_clipped = mb_values + torch.clamp(
+                    #         mb_new_values - mb_values,
+                    #         -configs["lr_clip_range"],
+                    #         configs["lr_clip_range"],
+                    #     )
+                    #     v_loss_clipped = (v_clipped - mb_returns) ** 2
+                    #     v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                    #     value_loss = 0.5 * v_loss_max.mean()
+                    # else:
+                    #     value_loss = 0.5 * ((mb_new_values - mb_returns) ** 2).mean()
+                    
+                    entropy_loss = mb_entropy.mean()
+                    total_loss = policy_loss - configs["ent_coef"] * entropy_loss + configs["vf_coef"] * value_loss 
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), configs["max_grad_norm"])
+                    optimizer.step()
+                    
+                    sum_total_loss_mini_batch += total_loss
+                    sum_policy_loss_mini_batch += policy_loss
+                    sum_value_loss_mini_batch += value_loss
+                    
+                sum_total_loss += sum_total_loss_mini_batch / num_mini_batch
+                sum_policy_loss += sum_policy_loss_mini_batch / num_mini_batch
+                sum_value_loss += sum_value_loss_mini_batch / num_mini_batch
                 
         # logging
         tb_logger.add("train/total_loss", sum_total_loss, n_epoch)
@@ -581,7 +593,7 @@ if __name__ == "__main__":
         if args.meta_learning:
             test_return: float = 0.0
             for j, index in enumerate(test_tasks):
-                if not args.meta_learning:
+                if not args.same_task:
                     index = 0
                 env.seed(args.seed+2*j)
                 env.reset_task(index)
@@ -600,6 +612,8 @@ if __name__ == "__main__":
                         with torch.no_grad():
                             action, log_prob, entropy, value, new_hidden \
                                 = agent.get_action_and_value(tran, hidden)
+                        if configs['is_continuous']:
+                            action = action.numpy()
                         next_obs, reward, done, info = env.step(action)
                         reward = np.array(reward)
                         test_return += reward
@@ -610,22 +624,25 @@ if __name__ == "__main__":
                         if done or cur_step == args.max_episode_steps:
                             break
             
-            results["meta_test_return"] = test_return / len(test_tasks)
-            meta_test_return = results["meta_test_return"]
+            meta_test_return = test_return / len(test_tasks)
+            results["meta_test_return"] = meta_test_return
             print(f"meta_test_return: {meta_test_return}")
             tb_logger.add("test/meta_test_mean_return", meta_test_return, n_epoch)
         
         else: # no meta rl evaluation
-            test_return: float = 0
+            test_return: float = 0.0
             env.seed(args.seed+1)
             print(f"1/{len(test_tasks)}] meta evaluating")
             hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
             obs = env.reset()
+            done = False
             cur_step = 0
             while not (done or cur_step == args.max_episode_steps):
                 with torch.no_grad():
                     action, log_prob, entropy, value, new_hidden \
                         = agent.get_action_and_value(obs, hidden)
+                if configs['is_continuous']:
+                    action = action.numpy()
                 next_obs, reward, done, info = env.step(action)
                 test_return += reward
                 done = np.array(done, dtype=int)
@@ -636,7 +653,6 @@ if __name__ == "__main__":
                     break
             
             results["test_return"] = test_return
-            test_return = results["test_return"]
             print(f"test_return: {test_return}")
             tb_logger.add("test/test_return", test_return, n_epoch)
 

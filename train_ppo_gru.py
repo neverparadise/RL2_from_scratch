@@ -72,7 +72,11 @@ def parse_args():
             # help="the id of the environment")
     #parser.add_argument("--env_name", type=str, default="LunarLanderContinuous-v2",
     #       help="the id of the environment")
-    parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
+    #parser.add_argument("--env_name", type=str, default="Pendulum-v1")
+    #parser.add_argument("--env_name", type=str, default="HalfCheetah-v3")
+    
+    parser.add_argument("--env_name", type=str, default="CartPole-v1")
+    
     # parser.add_argument("--env_name", type=str, default="Ant")
     parser.add_argument("--total-timesteps", type=int, default=20000000,
                         help="total timesteps of the experiments")
@@ -189,9 +193,9 @@ class RNNAgent(nn.Module):
 
         self.embedding = nn.Sequential(
             layer_init(nn.Linear(self.input_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
         )
         self.gru = nn.GRU(self.linear_dim, self.hidden_dim, \
                             num_layers=self.num_rnn_layers, bias=True)
@@ -201,7 +205,7 @@ class RNNAgent(nn.Module):
             nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(self.linear_dim, self.action_dim), std=0.01),
+            layer_init(nn.Linear(self.linear_dim, self.action_dim)),
             )
             self.actor_logstd = nn.Parameter(torch.zeros(1, self.action_dim))
             #self.actor_logstd =  layer_init(nn.Linear(self.hidden_dim, self.action_dim))
@@ -209,9 +213,9 @@ class RNNAgent(nn.Module):
             self.policy_logits = layer_init(nn.Linear(self.hidden_dim, self.num_discretes))
         self.critic = nn.Sequential(
             layer_init(nn.Linear(self.hidden_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, 1))
         )
 
@@ -219,14 +223,20 @@ class RNNAgent(nn.Module):
         # state = (num_envs, state_dim)
         state = _format(state, self.device, self.num_envs, self.minibatch_size, is_training)
         if is_training:
-            hidden = hidden.permute(1, 0, 2).contiguous()
+           hidden = hidden.permute(1, 0, 2).contiguous()
         x = self.embedding(state)
         hidden = to_tensor(hidden, device=self.device)
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
-            mu = torch.tanh(self.mean(x))
+            mu = self.mean(x)
+            # print(f"mu: {mu}")
+            # print(f"mu shape: {mu.shape}")
+            
             action_logstd = self.actor_logstd.expand_as(mu)
             std = torch.exp(action_logstd)
+            # print(f"std: {std}")
+            # print(f"std shape: {std.shape}")
+            
             # std = F.softplus(self.std(x))
             dist = Normal(mu, std)
         else:
@@ -242,28 +252,37 @@ class RNNAgent(nn.Module):
     def get_action_and_value(self, x ,hidden, is_training=False, action=None):
         x, dist, new_hidden = self.forward(x, hidden, is_training=is_training)
         value = self.critic(x)
+        entropy = dist.entropy()
         if is_training:
-            return action, dist.log_prob(action).sum(-1), dist.entropy().sum(-1), value, new_hidden
+            if self.is_continuous:
+#                return action, dist.log_prob(action).sum(-1), entropy.sum(-1), value, new_hidden
+                # log_prob : [1, 64, 6]
+                # old_prob : [64, 4, 6]
+                return action, dist.log_prob(action), entropy, value, new_hidden
+
+            else:
+                return action, dist.log_prob(action), entropy, value, new_hidden
+                
         else: # evaluation
             if self.is_deterministic:
                 action = dist.mean
                 log_prob = torch.zeros(1)
             else: # stochastic
-                action = dist.sample()
-                log_prob = dist.log_prob(action)
-                log_prob = log_prob.sum(-1)
-            
-            action = action.reshape(self.num_envs, -1)
-            log_prob = log_prob.reshape(self.num_envs,)
+                action = dist.sample()# 1, 4, 6
+                log_prob = dist.log_prob(action)   # 1, 4, 6
+
             if self.is_continuous:
+                action = action.reshape(self.num_envs,self.action_dim)
+                log_prob = log_prob.reshape(self.num_envs,self.action_dim)
                 action = action.detach()
+                #log_prob = log_prob.sum(-1)
+                #entropy = entropy.sum(-1)
             else:
                 # ! 벡터환경이라 item 없애야할듯
+                action = action.reshape(self.num_envs,)
+                log_prob = log_prob.reshape(self.num_envs,)
                 action = action.detach() # .item() ? 
-            
-            log_prob = log_prob.detach()
-            entropy = dist.entropy().sum(-1)
-            value = value.detach()
+                        
             return action, log_prob, entropy, value, new_hidden
                                 
 
@@ -318,9 +337,12 @@ if __name__ == "__main__":
     optimizer = optim.Adam(agent.parameters(), lr=float(configs["lr"]), eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.rollout_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    observations = torch.zeros((args.rollout_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.rollout_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
+    if configs['is_continuous']:
+        logprobs = torch.zeros((args.rollout_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    else:
+        logprobs = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
     values = torch.zeros((args.rollout_steps, args.num_envs)).to(device)
@@ -334,7 +356,7 @@ if __name__ == "__main__":
     num_updates = args.total_timesteps // args.batch_size
 
     for update in range(1, num_updates + 1):
-        hidden = hiddens[0].clone().to(device) # 2, 4, 18
+        hidden = torch.zeros(configs["num_rnn_layers"], args.num_envs, configs["hidden_dim"]).to(device)
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
@@ -343,7 +365,7 @@ if __name__ == "__main__":
 
         for step in range(0, args.rollout_steps):
             global_step += 1 * args.num_envs
-            obs[step] = next_obs
+            observations[step] = next_obs
             dones[step] = next_done
             hiddens[step] = hidden
 
@@ -382,8 +404,8 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
+        b_obs = observations.reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs.reshape((-1,) + envs.single_action_space.shape)
         b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
@@ -402,7 +424,10 @@ if __name__ == "__main__":
                 _, newlogprob, entropy, newvalue, newhiddens = agent.get_action_and_value(b_obs[mb_inds], hidden=mb_hiddens,\
                                                                     is_training=True, action=b_actions[mb_inds])
                 mb_old_probs = b_logprobs[mb_inds]
-                logratio = newlogprob - mb_old_probs
+                if configs['is_continuous']:
+                    logratio = newlogprob.squeeze(0).sum(1) - mb_old_probs.sum(1)
+                else:
+                    logratio = newlogprob - mb_old_probs
                 ratio = logratio.exp()
 
                 with torch.no_grad():

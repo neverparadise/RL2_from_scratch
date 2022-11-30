@@ -17,7 +17,7 @@ print(seeds)
 
 cmds = []
 for seed in seeds:
-    cmd = "python train_ppo_gru.py --exp_name PPO_GRU_Modify_critic --env_name HalfCheetah-v3 --device 'cuda' --config_path ./configs/base_config.yaml --seed {}".format(seed)
+    cmd = "python train_ppo_gru.py --exp_name PPO_GRU_Modify_log_prob --env_name HalfCheetah-v3 --device 'cuda' --config_path ./configs/base_config.yaml --seed {}".format(seed)
     cmds.append(cmd)
 
 @ray.remote(num_cpus=exp_per_cpus, num_gpus=gpu_fractions)
