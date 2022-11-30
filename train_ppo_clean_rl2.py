@@ -130,9 +130,23 @@ def _format(x, dim, device, minibatch_size=1, is_training=False):
     else:
         x = x.to(device=device)
     if len(x.shape) < 3:
-        x = x.reshape(1, 1, -1) # [L, N, flatten]
+        x = x.reshape(1, 1, -1) 
     if is_training:
-        x = x.reshape(1, -1, dim)
+        x = x.reshape(1, -1, dim) # [L, N, flatten]
+    return x
+
+def _format_hidden(x, num_rnn_layers, hidden_dim, device, is_training=False):
+    if not isinstance(x, torch.Tensor):
+        x = torch.tensor(x, dtype=torch.float32)
+        x = x.to(device=device)
+    else:
+        x = x.to(device=device)
+    if len(x.shape) < 3:
+        x = x.reshape(num_rnn_layers, 1, hidden_dim) 
+    if is_training:
+        # ! mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
+        x = x.permute(1, 0, 2).contiguous() #  (L, N, H)
+        x = x.reshape(num_rnn_layers, -1, hidden_dim) # [L, N, flatten]
     return x
 
 
@@ -205,11 +219,9 @@ class Agent(nn.Module):
         else:
             state = transition 
             concatenated = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
-        if is_training:
-            hidden = hidden.permute(1, 0, 2).contiguous() # (L, N, H)
-            # ! mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
+
         x = self.embedding(concatenated)
-        hidden = to_tensor(hidden, device=self.device)
+        hidden = _format_hidden(hidden, self.num_rnn_layers, self.hidden_dim, self.device, is_training)
         x, new_hidden = self.gru(x, hidden)
         if self.is_continuous:
             mu = self.mean(x)
@@ -385,7 +397,7 @@ if __name__ == "__main__":
                                     
                 with torch.no_grad():
                     trans = (b_observations[pt-1], b_actions[pt-1], b_rewards[pt-1], b_dones[pt-1])
-                    next_value = agent.get_value(trans, b_hiddens[pt-1].reshape(1, 1, -1))
+                    next_value = agent.get_value(trans, b_hiddens[pt-1].reshape(configs['num_rnn_layers'], 1, configs['hidden_dim']))
                     lastgaelam = 0
                     for t in reversed(range(final_pt, pt-1)):
                         if (t-final_pt) == args.max_episode_steps - 1:
