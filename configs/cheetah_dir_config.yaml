@@ -5,8 +5,8 @@ meta_batch_size: 2
 num_tasks: 2
 num_train_tasks: 2
 num_test_tasks: 2
-n_epochs: 1000
-k_epochs: 5 # optimization epoch
+n_epochs: 4000
+k_epochs: 3 # optimization epoch
 num_stop_conditions: 5
 stop_goal: 180
 gamma: 0.99
@@ -23,11 +23,11 @@ min_std: 0.5 # e^-20
 max_std: 1.5 # e^2
 
 # network config
-linear_dim: 64
+linear_dim: 128
 trans_dim: 128
-hidden_dim: 64 
+hidden_dim: 128 
 is_recurrent: True
-num_rnn_layers: 1
+num_rnn_layers: 2
 seq_len: 1
 is_deterministic: False
 layer_normalization: False
