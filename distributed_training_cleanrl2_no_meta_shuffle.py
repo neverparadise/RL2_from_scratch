@@ -20,7 +20,7 @@ print(seeds)
 
 cmds = []
 for seed in seeds:
-    cmd = "python train_ppo_clean_rl2.py --meta_learning False --shuffle_mb True --env_name HalfCheetahDirEnv --device 'cuda:0' --config_path ./configs/cheetah_dir_config.yaml --seed {}".format(seed)
+    cmd = "python train_ppo_clean_rl2.py --meta_learning False --shuffle_mb --same_task True True --env_name HalfCheetah-v3 --device 'cuda:0' --config_path ./configs/cheetah_dir_config.yaml --seed {}".format(seed)
     cmds.append(cmd)
 
 @ray.remote(num_cpus=exp_per_cpus, num_gpus=gpu_fractions)
