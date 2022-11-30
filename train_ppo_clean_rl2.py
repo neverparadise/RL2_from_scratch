@@ -206,7 +206,7 @@ class Agent(nn.Module):
             state = transition 
             concatenated = _format(state, self.state_dim, self.device, self.minibatch_size, is_training)
         if is_training:
-            hidden = hidden.permute(1, 0, 2).contiguous() 
+            hidden = hidden.permute(1, 0, 2).contiguous() # (L, N, H)
             # ! mini_batch_size, num_rnn_layers, hidden_dim -> num_rnn, mb_size, hidden_dim
         x = self.embedding(concatenated)
         hidden = to_tensor(hidden, device=self.device)
@@ -351,18 +351,12 @@ if __name__ == "__main__":
                 
                 # ? episode rollout per trial
                 hidden = torch.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
-
+                obs = env.reset()
+                action = torch.zeros(configs["action_dim"])
+                reward = torch.zeros(1)
+                done = torch.zeros(1)
                 for epi in range(args.num_episodes_per_trial): # 0, 1
                     cur_step = 0
-                    obs = env.reset()
-                    action = np.zeros(configs["action_dim"])
-                    reward = np.zeros(1)
-                    done = np.zeros(1)
-                    b_observations[pt] = torch.tensor(obs).cpu()
-                    b_actions[pt] = torch.tensor(action).cpu()
-                    b_rewards[pt] = torch.tensor(reward).cpu()
-                    b_dones[pt] = torch.tensor(done).cpu()
-                    b_hiddens[pt] = torch.tensor(hidden).cpu()
                     while not (done or cur_step == args.max_episode_steps):
                         tran = (obs, action, reward, done)
                         with torch.no_grad():
@@ -376,10 +370,7 @@ if __name__ == "__main__":
                         hidden = new_hidden
                         obs = next_obs
                         next_done = done
-                        cur_step += 1
-                        pt += 1
-                        if done or cur_step == args.max_episode_steps:
-                            break
+                                                      
                         b_observations[pt] = torch.tensor(obs).cpu()
                         b_actions[pt] = torch.tensor(action).cpu()
                         b_rewards[pt] = torch.tensor(reward).cpu()
@@ -387,22 +378,26 @@ if __name__ == "__main__":
                         b_log_probs[pt] = torch.tensor(log_prob).cpu()
                         b_values[pt] = torch.tensor(value).cpu()
                         b_hiddens[pt] = hidden.reshape(configs["num_rnn_layers"], configs["hidden_dim"]).cpu()
-
-
-                    with torch.no_grad():
-                        trans = (obs, action, reward, done)
-                        next_value = agent.get_value(trans, new_hidden)
-                        lastgaelam = 0
-                        for t in reversed(range(final_pt, pt)):
-                            if (t-final_pt) == args.max_episode_steps - 1:
-                                nextnonterminal = 1.0 - next_done
-                                nextvalues = next_value
-                            else:
-                                nextnonterminal = 1.0 - b_dones[t + 1]
-                                nextvalues = b_values[t + 1]
-                            delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
-                            b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
-                        b_returns[final_pt:pt] = (b_advantages[final_pt:pt] + b_values[final_pt:pt]).clone()
+                        cur_step += 1
+                        pt += 1
+                        if done or cur_step == args.max_episode_steps :
+                            break
+                                    
+                with torch.no_grad():
+                    trans = (b_observations[pt-1], b_actions[pt-1], b_rewards[pt-1], b_dones[pt-1])
+                    next_value = agent.get_value(trans, b_hiddens[pt-1].reshape(1, 1, -1))
+                    lastgaelam = 0
+                    for t in reversed(range(final_pt, pt-1)):
+                        if (t-final_pt) == args.max_episode_steps - 1:
+                            nextnonterminal = 1.0 - next_done
+                            nextvalues = next_value
+                        else:
+                            nextnonterminal = 1.0 - b_dones[t + 1]
+                            nextvalues = b_values[t + 1]
+                        delta = b_rewards[t] + configs["gamma"] * nextvalues * nextnonterminal - b_values[t]
+                        b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
+                    b_returns[final_pt:pt] = (b_advantages[final_pt:pt] + b_values[final_pt:pt]).clone()
+                final_pt = pt
 
                     
                     # ? calculate return, advantages      
@@ -423,7 +418,6 @@ if __name__ == "__main__":
                     #         )
                     #         advantages[t] = running_advant
                     #         prev_value = values[t]
-                    final_pt = pt
                             
                         
             results["meta_train_return"] = b_rewards.sum() / len(train_tasks)
@@ -593,18 +587,18 @@ if __name__ == "__main__":
         if args.meta_learning:
             test_return: float = 0.0
             for j, index in enumerate(test_tasks):
-                if not args.same_task:
+                if args.same_task:
                     index = 0
                 env.seed(args.seed+2*j)
                 env.reset_task(index)
                 print(f"[{j + 1}/{len(test_tasks)}] meta evaluating, current task: {env.get_task()}")
                 # ? episode rollout per trial
-                hidden = np.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
+                hidden = torch.zeros((configs["num_rnn_layers"], 1, configs["hidden_dim"]))
                 for epi in range(args.num_episodes_per_trial): # 0, 1
                     obs = env.reset()
-                    action = np.zeros(configs["action_dim"])
-                    reward = np.zeros(1)
-                    done = np.zeros(1)
+                    action = torch.zeros(configs["action_dim"])
+                    reward = torch.zeros(1)
+                    done = torch.zeros(1)
                     cur_step = 0
         
                     while not (done or cur_step == args.max_episode_steps):
