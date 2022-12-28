@@ -166,7 +166,6 @@ class Agent(nn.Module):
         self.is_continuous = configs["is_continuous"]
         self.hidden_dim = configs["hidden_dim"]
         self.num_rnn_layers = configs["num_rnn_layers"]
-        self.action_dim = configs["action_dim"]
         self.num_discretes = configs["num_discretes"]
         self.is_deterministic = False
         
@@ -175,7 +174,6 @@ class Agent(nn.Module):
             nn.Tanh(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
             nn.Tanh(),
-            nn.LeakyReLU(),
             layer_init(nn.Linear(self.linear_dim, self.linear_dim)),
             nn.Tanh(),
         )
@@ -394,13 +392,17 @@ if __name__ == "__main__":
                         pt += 1
                         if done or cur_step == args.max_episode_steps :
                             break
-                                    
+                
+                print("calculate advantages...")
+                print(f"pointer: {pt}")
+                print(f"final_pt: {final_pt}")
                 with torch.no_grad():
                     trans = (b_observations[pt-1], b_actions[pt-1], b_rewards[pt-1], b_dones[pt-1])
                     next_value = agent.get_value(trans, b_hiddens[pt-1].reshape(configs['num_rnn_layers'], 1, configs['hidden_dim']))
                     lastgaelam = 0
                     for t in reversed(range(final_pt, pt-1)):
                         if (t-final_pt) == args.max_episode_steps - 1:
+                        # if (t-final_pt) == args.max_episode_steps * args.num_episodes_per_trial - 1:
                             nextnonterminal = 1.0 - next_done
                             nextvalues = next_value
                         else:
@@ -410,6 +412,9 @@ if __name__ == "__main__":
                         b_advantages[t] = lastgaelam = delta + configs["gamma"] * configs["gae_lambda"] * nextnonterminal * lastgaelam
                     b_returns[final_pt:pt] = (b_advantages[final_pt:pt] + b_values[final_pt:pt]).clone()
                 final_pt = pt
+                print("finish advantages...")
+                print(f"pointer: {pt}")
+                print(f"final_pt: {final_pt}")
 
                     
                     # ? calculate return, advantages      
